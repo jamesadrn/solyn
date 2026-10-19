@@ -1,0 +1,265 @@
+/* Solyn: a calm research workspace. Native controls keep keyboard accessibility. */
+:root {--solyn-canvas:#F7F9FC;--solyn-panel:#EDF2F7;--solyn-ink:#162235;--solyn-muted:#475569;--solyn-line:#CBD5E1;--solyn-accent:#153E75;--solyn-green:#176342;--solyn-red:#A4262C}
+html {font-size:18px}
+body, input, textarea, button {font-family:"Segoe UI", "Helvetica Neue", Arial, sans-serif}
+.stApp {background:var(--solyn-canvas);color:var(--solyn-ink)}
+.block-container {max-width:1200px;padding:2.6rem 3.4rem 2rem}
+[data-testid="stHeader"] {background:var(--solyn-canvas);height:2.5rem}
+[data-testid="stDecoration"] {display:none}
+[data-testid="stSidebar"] {background:var(--solyn-panel);border-right:1px solid #e3dfd5}
+[data-testid="stSidebarContent"] {padding:0!important}
+[data-testid="stSidebarHeader"] {height:2rem!important;min-height:2rem!important;margin-bottom:0!important}
+[data-testid="stSidebarUserContent"] {width:100%!important;padding:.3rem 1.1rem 1rem!important;margin-top:0!important}
+[data-testid="stSidebarUserContent"] > div > [data-testid="stVerticalBlockBorderWrapper"] > [data-testid="stVerticalBlock"] {min-height:calc(100dvh - 4.2rem)}
+[data-testid="stSidebarUserContent"] [data-testid="stVerticalBlockBorderWrapper"]:has(> .st-key-v3_sidebar_footer) {margin-top:auto}
+[data-testid="stSidebar"] .st-key-v3_account {border-top:1px solid var(--solyn-line);padding-top:.7rem}
+[data-testid="stSidebar"] .st-key-v3_account [data-testid="stCaptionContainer"] {margin-top:.1rem}
+[data-testid="stSidebar"] [data-testid="stVerticalBlock"] {gap:.7rem}
+[data-testid="stSidebarCollapseButton"] button {color:#475569}
+[data-testid="stMarkdownContainer"] p, [data-testid="stMarkdownContainer"] li {font-size:1rem;line-height:1.65}
+[data-testid="stWidgetLabel"] p {font-size:.9rem!important;font-weight:550;line-height:1.5}
+[data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p {font-size:.82rem!important;line-height:1.55;color:var(--solyn-muted)!important;opacity:1!important}
+[data-baseweb="tag"] {background:#E2EAF4!important;color:#475569!important;border:1px solid #d7cdbd;border-radius:5px}
+[data-baseweb="tag"] span {color:#475569!important;font-size:.8rem!important}
+h1 {font-family:Georgia,"Times New Roman",serif!important;font-weight:400!important;font-size:2.65rem!important;letter-spacing:-.045em;line-height:1.16!important;padding-bottom:.55rem!important}
+h2 {font-family:Georgia,"Times New Roman",serif!important;font-size:1.7rem!important;font-weight:400!important;letter-spacing:-.025em}
+h3 {font-size:1.08rem!important;font-weight:600!important;letter-spacing:-.018em}
+hr {border-color:var(--solyn-line)!important;margin:1.15rem 0!important}
+div.stButton>button, div.stDownloadButton>button {min-height:2.65rem;border-radius:9px;font-weight:550;border-color:#d7d2c7;background:#FFFFFF;color:var(--solyn-ink)}
+div.stButton>button p, div.stDownloadButton>button p {font-size:.9rem!important;line-height:1.4}
+div.stButton>button:hover, div.stDownloadButton>button:hover {background:#E8EEF5;border-color:#b7aea0;color:#162235}
+div.stButton>button[kind="primary"] {background:var(--solyn-accent);border-color:var(--solyn-accent);color:#fff}
+div.stButton>button[kind="primary"] p {color:#fff!important}
+div.stButton>button[kind="primary"]:hover {background:#0E2B52;border-color:#0E2B52}
+div.stButton>button:disabled {opacity:.45}
+button:focus-visible,input:focus-visible {outline:3px solid #1D4ED8!important;outline-offset:3px}
+[data-testid="stSidebar"] .st-key-v3_nav, [data-testid="stSidebar"] .st-key-v3_nav [data-testid="stVerticalBlock"] {gap:.2rem!important}
+[data-testid="stSidebar"] .st-key-v3_nav button {background:transparent!important;border:1px solid transparent!important;box-shadow:none!important;justify-content:flex-start;text-align:left;min-height:2.2rem;padding:.35rem .5rem;color:#475569!important;gap:.4rem}
+[data-testid="stSidebar"] .st-key-v3_nav [data-testid="stIconMaterial"] {font-size:1.15rem}
+.st-key-v3_nav [data-testid="stElementContainer"]:has(.solyn-nav-label) {min-height:2rem!important}
+[data-testid="stSidebar"] .st-key-v3_nav button p {font-size:.88rem!important;font-weight:450;color:#475569!important}
+[data-testid="stSidebar"] .st-key-v3_nav button[kind="primary"] {background:#D9E5F4!important;border-color:#ded8cc!important}
+[data-testid="stSidebar"] .st-key-v3_nav button[kind="primary"] p {color:#475569!important;font-weight:650}
+[data-testid="stSidebar"] .st-key-v3_nav button:hover {background:#E2EAF4!important}
+.solyn-nav-label {font-size:.61rem;letter-spacing:.12em;color:#475569;font-weight:650;margin:0;padding:.55rem .65rem .2rem}
+.v3-logo {width:140px;margin:.4rem 0 .3rem}
+.v3-logo img {display:block;width:100%}
+.solyn-brand-note {font-size:.62rem;letter-spacing:.16em;color:#475569;margin:.05rem .45rem .8rem}
+.solyn-data {padding:.85rem .7rem;border-top:1px solid #dad5c9;margin-top:.8rem}
+.solyn-data-label {font-size:.82rem;font-weight:400;color:#475569}
+.solyn-data-time {font-size:.82rem;font-weight:650;color:#162235;margin:.2rem 0 .7rem;font-variant-numeric:tabular-nums;line-height:1.55}
+.solyn-schedule {font-size:.82rem;line-height:1.55;color:#475569}
+.solyn-schedule strong {display:inline-block;margin-top:.2rem;font-weight:650;color:#162235}
+.solyn-data-note {font-size:.82rem;line-height:1.55;color:#475569;margin-top:.7rem}
+.solyn-account {display:flex;align-items:center;gap:.6rem;padding:.4rem .4rem 0}
+.solyn-avatar {background:#D9E5F4;color:#475569;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:.82rem;font-weight:650;flex-shrink:0}
+.solyn-account-name {font-size:.85rem;font-weight:600;line-height:1.3}
+.solyn-account-note {font-size:.65rem;color:#475569;margin-top:.18rem}
+[data-testid="stSidebar"] [data-testid="stCaptionContainer"], [data-testid="stSidebar"] [data-testid="stCaptionContainer"] p {font-size:.7rem!important}
+.st-key-solyn_page_focus, .st-key-solyn_page_lang, .st-key-solyn_scroll_card {display:none}
+/* teks kode (misalnya nama file contoh) dibuat lebih gelap supaya kontrasnya memenuhi WCAG AA */
+[data-testid="stMarkdownContainer"] code {color:#0E6B2C}
+.solyn-topline {display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e7e3da;padding:0 0 .75rem;margin:0 0 1.5rem;color:#475569;font-size:.72rem}
+.solyn-topline span:last-child {letter-spacing:.03em;color:#475569}
+.v3-intro {max-width:720px;font-size:1.02rem!important;line-height:1.75!important;color:#475569;margin:.15rem 0 1.1rem}
+/* dua tindakan utama Home, lebarnya dibatasi supaya tidak melebar penuh di layar besar */
+.st-key-solyn_home_actions {max-width:560px;margin-bottom:0}
+.solyn-section-note {font-size:.88rem;color:#475569;line-height:1.65;margin:.3rem 0 .4rem}
+.solyn-next-label {font-size:.95rem;font-weight:650;color:#162235;letter-spacing:.02em;margin:1.4rem 0 .5rem}
+[data-testid="stWidgetLabel"] p {font-size:.95rem!important;font-weight:650;color:#162235}
+.solyn-field-label {font-size:.95rem;font-weight:650;color:#162235;margin:0 0 .5rem}
+/* judul bagian buatan sendiri, ukurannya disamakan dengan st.subheader */
+.solyn-sub-head {font-size:1.08rem;font-weight:600;color:#162235;line-height:1.2;margin:0;padding:.75rem 0 1rem}
+/* panduan bergambar di halaman Unggah Data */
+.solyn-guide-caption {font-size:.9rem;color:#475569;line-height:1.6;margin:.65rem 0 .3rem}
+.solyn-guide-caption b {color:#162235}
+.solyn-hint {position:relative;font-style:normal;display:inline-flex;align-items:center;justify-content:center;vertical-align:-.1em;margin-left:.4rem;width:1.15em;height:1.15em;border:1px solid #CBD5E1;border-radius:50%;font-size:.75rem;font-weight:400;color:#475569;cursor:help}
+/* kotak penjelasan dibuat sendiri supaya gayanya sama dengan tooltip bawaan Streamlit */
+.solyn-hint::after {content:attr(data-tip);position:absolute;bottom:calc(100% + .55rem);left:0;width:max-content;max-width:280px;padding:.7rem .85rem;background:#FFFFFF;color:#162235;border:1px solid #CBD5E1;border-radius:10px;box-shadow:0 6px 18px rgba(22,34,53,.16);font-size:.85rem;font-weight:400;line-height:1.55;text-align:left;white-space:normal;opacity:0;visibility:hidden;transition:opacity .12s ease;pointer-events:none;z-index:60}
+.solyn-hint:hover::after, .solyn-hint:focus-visible::after {opacity:1;visibility:visible}
+/* ikon di sisi kanan halaman memunculkan kotaknya ke arah kiri supaya tidak terpotong */
+.solyn-hint-right::after {left:auto;right:0}
+/* daftar nilai indikator terbaru, tanda tanya memunculkan penjelasan saat kursor diarahkan */
+.solyn-indicators {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 1.6rem;margin:0 0 1.1rem}
+.solyn-indicators > div {display:flex;justify-content:space-between;align-items:baseline;gap:1rem;padding:.5rem 0;border-bottom:1px solid #eeeae1;font-size:.88rem}
+.solyn-indicators span {color:#475569}
+.solyn-indicators span {display:inline-flex;align-items:center}
+.solyn-indicators b {color:#162235;font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap}
+.v3-disclaimer {color:#A4262C!important;font-size:.82rem;line-height:1.6;margin:.5rem 0 0}
+[data-testid="stVerticalBlockBorderWrapper"]>div {border-color:var(--solyn-line)!important}
+.solyn-section-head {display:flex;justify-content:space-between;align-items:baseline;margin:.2rem 0 0;gap:1rem}
+.solyn-home-head {margin-top:.4rem}
+.solyn-section-head h2 {font-family:Georgia,serif;font-size:1.55rem;margin:0;padding:0!important;line-height:1.3}
+.solyn-section-head > span {color:#475569;font-size:.7rem;text-align:right}
+.solyn-table-wrap {background:#FFFFFF;border:1px solid var(--solyn-line);border-radius:12px;overflow:auto}
+.solyn-table {border-collapse:collapse;width:100%;font-size:.99rem}
+.solyn-table th {background:#EDF2F7;color:#162235;font-size:1.07rem;font-weight:700;text-align:left;padding:.8rem 1rem;white-space:nowrap}
+.solyn-table td {padding:.8rem 1rem;border-top:1px solid #eeeae1;vertical-align:middle}
+.solyn-table th.num,.solyn-table td.num {text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.solyn-table td small {display:block;font-size:.92rem;color:#475569;margin-top:.17rem}
+.solyn-table td strong {font-weight:650;color:#475569}
+.solyn-up {color:var(--solyn-green)} .solyn-down {color:var(--solyn-red)}
+.solyn-spark {width:94px;height:28px;vertical-align:middle}
+.solyn-note {font-size:.76rem;color:#475569;line-height:1.6;margin-top:.65rem}
+.solyn-workflow {display:grid;grid-template-columns:repeat(3,1fr);gap:1.2rem;margin:1rem 0 1.1rem;padding-top:1rem;border-top:1px solid var(--solyn-line)}
+.solyn-workflow p {font-size:.76rem!important;line-height:1.6!important;color:#475569;margin:.3rem 0}
+.solyn-workflow b {font-size:.79rem;font-weight:600;color:#475569}
+.solyn-workflow small {color:#153E75;margin-right:.4rem;font-size:.65rem}
+.v3-result {border:1px solid #d7d0c0;border-radius:14px;padding:1.7rem 1.8rem;background:#FFFFFF;margin:.4rem 0 .5rem;box-shadow:0 4px 12px #3d331204}
+.v3-result small {display:block;font-size:.82rem;color:#475569;margin-top:.55rem;letter-spacing:.02em;line-height:1.6}
+.v3-result strong {font-family:Georgia,serif;font-size:2.4rem;font-weight:400;letter-spacing:-.03em;line-height:1.2}
+.v3-result p {font-size:1.02rem!important;color:#162235;margin:.5rem 0 0;line-height:1.65}
+.v3-result .v3-disclaimer {margin-top:.55rem}
+[data-testid="stMetric"] {padding:1rem 1.2rem;border:1px solid var(--solyn-line);border-radius:12px;background:#FFFFFF}
+[data-testid="stMetricValue"] {font-family:inherit;font-size:1.8rem;font-weight:650;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+[data-testid="stMetricLabel"] p {white-space:normal!important;overflow:visible!important;text-overflow:clip!important;line-height:1.4;min-height:2.8em}
+[data-testid="stExpander"] {border-color:#ded8ca!important;border-radius:10px!important;background:#FFFFFF}
+[data-testid="stAlert"] {border-radius:10px;font-size:.88rem}
+/* semua pesan (st.info, st.success, st.warning, st.error) dibuat kotak putih dengan garis kiri berwarna,
+   jadi tidak ada lagi latar kuning atau biru dan teksnya tetap gelap supaya mudah dibaca */
+[data-testid="stAlertContainer"] {background:#FFFFFF!important;border:1px solid #CBD5E1;border-left:5px solid #153E75;border-radius:10px}
+[data-testid="stAlertContainer"]:has([data-testid="stAlertContentSuccess"]) {border-left-color:#176342}
+[data-testid="stAlertContainer"]:has([data-testid="stAlertContentWarning"]) {border-left-color:#B45309}
+[data-testid="stAlertContainer"]:has([data-testid="stAlertContentError"]) {border-color:#F1C4C6;border-left-color:#A4262C;background:#FDF2F2!important}
+[data-testid="stAlertContainer"]:has([data-testid="stAlertContentError"]) p {color:#7F1D1D!important}
+[data-testid="stAlertContainer"] p, [data-testid="stAlertContainer"] li {color:#334155!important}
+[data-testid="stAlertContainer"] strong {color:#162235!important}
+.solyn-nfa {display:flex;align-items:flex-start;gap:1rem;border-top:1px solid var(--solyn-line);margin-top:2.5rem;padding-top:1.1rem;color:#475569;font-size:.9rem;line-height:1.65}
+/* masukan dosen: judul NFA merah, kalimat sesudahnya biru tua supaya menonjol (kontras keduanya di atas 4.5:1) */
+.solyn-nfa span {color:#153E75}
+.solyn-nfa span b {color:#A4262C}
+@media(min-width:1400px) {.block-container {padding-top:3rem}}
+@media(max-width:1100px) {.block-container {padding-left:2rem;padding-right:2rem}h1 {font-size:2.25rem!important}}
+@media(max-width:640px) {.solyn-indicators {grid-template-columns:1fr}.block-container {padding:3rem 1.1rem 1.6rem}h1 {font-size:2rem!important}.v3-intro {font-size:.95rem!important}.solyn-topline {font-size:.59rem}.solyn-workflow {grid-template-columns:1fr;gap:.65rem}.solyn-section-head {align-items:flex-start}.solyn-table th,.solyn-table td {padding:.65rem .75rem}.solyn-nfa {gap:.7rem}}
+
+/* WCAG AA color targets: text >= 4.5:1, control boundaries and focus >= 3:1. */
+div.stButton>button, div.stDownloadButton>button {border-color:#718096}
+[data-baseweb="select"]>div, [data-testid="stNumberInputContainer"],
+[data-baseweb="input"], [data-testid="stExpander"] {border-color:#718096!important}
+[data-testid="stPopover"] button {border-color:#718096}
+[data-testid="stSidebar"] .st-key-v3_nav button[kind="primary"] {border-color:#53749C!important;border-left:3px solid #153E75!important}
+[data-testid="stSidebar"] .st-key-v3_nav button[kind="primary"] p {color:#12325B!important}
+.solyn-table {display:table!important;margin:0!important;border-spacing:0}
+.solyn-table-wrap {padding:0!important}
+.solyn-table-wrap > table {margin-block:0!important}
+.solyn-table-wrap th {border-bottom:1px solid #CBD5E1}
+.solyn-table-wrap td {border-right:0;border-left:0}
+.solyn-table-wrap tr:last-child td {border-bottom:0}
+.solyn-table td small {color:#475569}
+.solyn-up {color:#176342!important} .solyn-down {color:#A4262C!important}
+
+.solyn-table-wrap {border:1px solid #718096!important;border-radius:12px;overflow:auto;margin-bottom:1rem}
+.solyn-table {border:0!important;border-collapse:separate!important;border-spacing:0!important}
+.solyn-table th,.solyn-table td {border:0!important;border-bottom:1px solid #CBD5E1!important}
+.solyn-table tbody tr:last-child td {border-bottom:0!important}
+.solyn-table th:first-child {border-top-left-radius:11px}
+.solyn-table th:last-child {border-top-right-radius:11px}
+.solyn-pending {font-size:.75rem;color:#475569;white-space:normal!important}
+[data-testid="stMetric"] {padding:1rem .8rem 1rem 0;border:0;border-top:1px solid var(--solyn-line);border-radius:0;background:transparent}
+.st-key-v3_admin_status,.st-key-v3_admin_baseline,.st-key-v3_admin_access {margin-top:1.45rem}
+.st-key-v3_admin_status h3,.st-key-v3_admin_baseline h3,.st-key-v3_admin_access h3 {border-bottom:1px solid var(--solyn-line);padding-bottom:.55rem!important;margin-bottom:.55rem!important}
+.solyn-admin-facts {display:flex;flex-wrap:wrap;gap:.8rem 2.8rem;margin:.3rem 0 .8rem}
+.solyn-admin-facts span {display:flex;flex-direction:column;gap:.15rem;color:var(--solyn-muted);font-size:.78rem}
+.solyn-admin-facts strong {color:var(--solyn-ink);font-size:1.12rem;font-weight:650}
+.solyn-admin-counts {display:flex;flex-wrap:wrap;gap:.5rem 1.8rem;margin:.3rem 0 .8rem;color:var(--solyn-muted);font-size:.85rem}
+.solyn-admin-counts strong {color:var(--solyn-ink);font-size:1.05rem;margin-right:.25rem}
+.st-key-v3_admin_baseline [data-testid="stFileUploaderDropzone"] {border:0!important;border-radius:0!important;background:transparent!important;padding:.35rem 0!important}
+.st-key-v3_admin_access [data-testid="stDataFrame"] {border:0!important;border-radius:0!important}
+.solyn-brand-note {font-size:.7rem;letter-spacing:0}
+.solyn-nav-label {font-size:.72rem;letter-spacing:0}
+.v3-result {animation:solyn-result-appear .28s ease-out both}
+@keyframes solyn-result-appear {from {opacity:0;transform:translateY(5px)} to {opacity:1;transform:translateY(0)}}
+@media(prefers-reduced-motion:reduce) {.v3-result {animation:none}}
+
+@media(max-width:950px) {
+ .st-key-solyn_home_actions [data-testid="stHorizontalBlock"] {flex-direction:column!important}
+ .st-key-solyn_home_actions [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {width:100%!important;flex:1 1 auto!important}
+}
+
+/* popup masuk dan mode percobaan */
+.solyn-login-or { text-align: center; color: #5B6B82; font-size: 0.9rem; margin: 0.35rem 0; }
+.solyn-trial-timer {
+    border: 1px solid #C9D6EA; background: #EEF3FA; color: #162235;
+    border-radius: 0.6rem; padding: 0.45rem 0.7rem; margin-bottom: 0.4rem; font-size: 0.92rem;
+}
+.solyn-trial-timer strong { font-variant-numeric: tabular-nums; }
+
+/* tombol Masuk dengan Google: putih dengan logo Google */
+[class*="_google_wrap"] button {
+    background: #FFFFFF !important; color: #1F1F1F !important; border: 1px solid #747775 !important;
+}
+[class*="_google_wrap"] button:hover { background: #F2F5F9 !important; }
+div[class*="_google_wrap"] button[data-testid] [data-testid="stMarkdownContainer"] p,
+div[class*="_google_wrap"] button[data-testid] span { color: #1F1F1F !important; font-weight: 500; }
+[class*="_google_wrap"] button p::before {
+    content: ""; display: inline-block; width: 1.15em; height: 1.15em; margin-right: 0.6em;
+    vertical-align: -0.2em; background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path fill="%23FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="%23FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="%234CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="%231976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>') no-repeat center / contain;
+}
+
+/* menu samping rata kiri */
+[data-testid="stSidebar"] .st-key-v3_nav button > div,
+[data-testid="stSidebar"] .st-key-v3_nav button [data-testid="stMarkdownContainer"] {justify-content:flex-start!important;text-align:left!important;width:100%}
+[data-testid="stSidebar"] .st-key-v3_nav button p {text-align:left!important;width:100%}
+[data-testid="stSidebar"] .st-key-v3_nav button {padding-left:.75rem!important}
+/* sembunyikan ikon tautan di samping judul */
+[data-testid="stHeaderActionElements"], [data-testid="stHeadingWithActionElements"] a[href^="#"] {display:none!important}
+
+/* halaman login dan persetujuan: latar putih, isi di kiri, logo di kanan, muat satu layar */
+.stApp:has(.st-key-solyn_auth), .stApp:has(.st-key-solyn_auth) [data-testid="stHeader"] {background:#FFFFFF}
+[data-testid="stMainBlockContainer"]:has(.st-key-solyn_auth) {padding-top:2.5rem!important;padding-bottom:3rem!important}
+.st-key-solyn_auth [data-testid="stHorizontalBlock"] {min-height:calc(100dvh - 10rem);align-items:center}
+.st-key-solyn_auth [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:last-child {align-self:stretch;min-height:calc(100dvh - 10rem);display:flex;align-items:center;justify-content:center;border-left:1px solid #E2E8F0}
+.st-key-solyn_auth_body {max-width:30rem;margin:0 auto;gap:.9rem}
+.solyn-auth-logo {display:block;width:62%;max-width:27rem;margin:0 auto}
+.solyn-auth-logo-mobile {display:none}
+h1.solyn-auth-heading {font-family:Georgia,"Times New Roman",serif!important;font-weight:400!important;font-size:2.5rem!important;letter-spacing:-.03em;line-height:1.15!important;color:#162235;margin:0 0 .4rem;padding:0!important}
+.solyn-auth-lead {font-size:.95rem!important;line-height:1.65!important;color:#475569;text-align:justify;margin:0 0 .8rem!important}
+.st-key-solyn_login_google button {min-height:3.3rem;background:#FFFFFF!important;border:1px solid #CBD5E1!important;box-shadow:0 1px 2px rgba(22,34,53,.06)}
+.st-key-solyn_login_google button:hover {border-color:#153E75!important;background:#F7F9FC!important}
+.st-key-solyn_login_google button p {color:#162235!important;font-weight:600;font-size:1.02rem}
+.solyn-auth-note {font-size:.82rem!important;color:#475569;text-align:center;line-height:1.5;margin:0}
+.solyn-auth-foot {position:fixed;bottom:.8rem;left:0;width:50%;text-align:center;font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:#64748B;pointer-events:none}
+@media (max-width: 640px) {
+  .st-key-solyn_auth [data-testid="stHorizontalBlock"] {min-height:calc(100dvh - 10rem);align-content:center}
+  .st-key-solyn_auth [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:last-child {display:none}
+  .solyn-auth-logo-mobile {display:block;width:58%;max-width:15rem;margin:0 auto 1.4rem}
+  h1.solyn-auth-heading {font-size:1.75rem!important}
+  .solyn-auth-lead {font-size:.86rem!important;line-height:1.6!important}
+  .solyn-auth-foot {width:100%;font-size:.68rem}
+}
+
+/* halaman Tentang */
+.solyn-about-card {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.9rem 1.5rem;background:#FFFFFF;border:1px solid var(--solyn-line);border-radius:12px;padding:1.1rem 1.3rem;margin:.3rem 0 1rem}
+.solyn-about-card span {display:block;font-size:.75rem;color:#475569;letter-spacing:.04em}
+.solyn-about-card strong {font-size:.98rem;color:#162235;font-weight:600}
+.solyn-about-list {margin:.2rem 0 0 1.2rem;padding:0}
+.solyn-about-list li {font-size:1rem;line-height:1.7}
+
+/* halaman Hasil Pengujian: tabel perbandingan portofolio dan kartu metrik prediksi */
+/* perbandingan model dan pembanding, satu kartu per ukuran */
+.solyn-compare-cards {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.8rem;margin:.5rem 0 .9rem}
+.solyn-compare-card {background:#FFFFFF;border:1px solid #CBD5E1;border-radius:12px;padding:1rem 1.1rem;display:flex;flex-direction:column}
+.solyn-compare-card .solyn-field-label {margin:0 0 .5rem}
+.solyn-compare-value {font-size:1.6rem;font-weight:650;letter-spacing:-.01em;font-variant-numeric:tabular-nums;color:#162235;line-height:1.2}
+.solyn-compare-side {font-size:.84rem;color:#475569;margin-top:.3rem;font-variant-numeric:tabular-nums}
+.solyn-verdict-up, .solyn-verdict-down, .solyn-verdict-flat {font-size:.84rem;font-weight:650;margin-top:auto;padding-top:.6rem}
+.solyn-verdict-up {color:#176342}
+.solyn-verdict-down {color:#A4262C}
+.solyn-verdict-flat {color:#475569}
+.solyn-metric-cards {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.8rem;margin:.4rem 0 .8rem}
+.solyn-metric-card {background:#FFFFFF;border:1px solid #CBD5E1;border-radius:12px;padding:1rem 1.1rem}
+.solyn-metric-card b {display:block;font-size:1rem;color:#162235}
+.solyn-metric-value {font-family:inherit;font-size:1.7rem;font-weight:650;letter-spacing:-.01em;font-variant-numeric:tabular-nums;color:#162235;margin:.3rem 0 .45rem}
+.solyn-metric-card span {display:block;font-size:.82rem;color:#475569;line-height:1.45}
+@media (max-width: 900px) {
+  .solyn-metric-cards {grid-template-columns:repeat(2,minmax(0,1fr))}
+  .solyn-compare-cards {grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width: 640px) {
+  .solyn-metric-cards {grid-template-columns:1fr}
+  .solyn-compare-cards {grid-template-columns:1fr}
+}
+
+/* isian indikator Skenario Sendiri dimulai kosong, tombol plus minus bawaan Streamlit tidak dipakai */
+.st-key-solyn_scenario_inputs [data-testid="stNumberInputStepUp"],
+.st-key-solyn_scenario_inputs [data-testid="stNumberInputStepDown"] {display:none}

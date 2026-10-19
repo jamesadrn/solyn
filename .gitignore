@@ -1,0 +1,15 @@
+.streamlit/secrets.toml
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
+.venv*/
+*.log
+
+data/Ringkasan Saham-*.xlsx
+runtime/backups/
+runtime/preprocessing_audit/
+
+tests/
+pytest.ini
