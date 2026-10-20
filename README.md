@@ -16,7 +16,8 @@ Alamat aplikasi: [Solyn](https://solynapp.streamlit.app)
 4. [Metode](#metode)
 5. [Struktur repositori](#struktur-repositori)
 6. [Menjalankan di komputer sendiri](#menjalankan-di-komputer-sendiri)
-7. [Pembuat](#pembuat)
+7. [Kebijakan privasi](#kebijakan-privasi)
+8. [Pembuat](#pembuat)
 
 ## Fitur
 
@@ -118,6 +119,14 @@ jupyter lab
 ```
 
 Notebook dijalankan berurutan dari 01 sampai 05. File Excel mentah dari BEI (sekitar 1 GB) tidak disertakan. Hasil notebook 01 sudah tersedia di `data/interim/panel_raw.parquet`, jadi notebook 02 sampai 05 dapat langsung dijalankan. Untuk menjalankan notebook 01, unduh Ringkasan Saham harian dari [idx.co.id](https://www.idx.co.id) dan simpan di folder `data/`.
+
+## Kebijakan privasi
+
+Solyn memakai login Google hanya untuk mengenali pengguna. Data yang disimpan adalah alamat email, nama, tanggal pendaftaran, status persetujuan, dan waktu coba gratis. Data tersebut dicatat di Google Sheet milik pengelola dan hanya dipakai untuk mengatur akses aplikasi.
+
+File yang diunggah pengguna di halaman Unggah Data hanya diproses selama sesi berjalan dan tidak disimpan setelah sesi berakhir. Solyn tidak membagikan data pengguna kepada pihak lain dan tidak memakainya untuk iklan.
+
+Pengguna dapat meminta data akunnya dihapus dengan menghubungi jamesandrn@gmail.com.
 
 ## Pembuat
 
