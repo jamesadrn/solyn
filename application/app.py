@@ -966,8 +966,7 @@ def enforce_trial_expiry():
             st.session_state[APPROVED_NOTICE_KEY] = True
             return False
         minutes = trial_settings()["minutes"]
-        end_trial(f"Waktu coba gratis {minutes:g} menit sudah habis dan data sesi percobaan sudah dihapus. "
-                  "Permintaan akses Anda sudah dikirim ke pengelola.")
+        end_trial(f"Masa coba gratis {minutes:g} menit sudah habis.")
         return True
     return False
 
@@ -1127,12 +1126,9 @@ def render_login_page():
 
 def render_access_page(identity):
     """Halaman untuk akun yang sudah masuk tapi belum disetujui admin."""
-    def body():
-        notice = st.session_state.pop(TRIAL_NOTICE_KEY, None)
-        if notice:
-            st.info(notice)
-        render_approval_gate(identity)
-    render_auth_layout(body)
+    # pesan habisnya coba gratis sudah tercakup di status akses, jadi tidak ditampilkan dua kali
+    st.session_state.pop(TRIAL_NOTICE_KEY, None)
+    render_auth_layout(lambda: render_approval_gate(identity))
 
 
 def require_user(view):
@@ -1184,8 +1180,6 @@ def render_trial_offer(identity, status):
         return
     minutes = trial_settings()["minutes"]
     if trial_record_window(identity["email"]):
-        st.info(f"Waktu coba gratis {minutes:g} menit untuk akun ini sudah dipakai. "
-                "Tunggu persetujuan pengelola untuk terus memakai aplikasi.")
         return
     with st.container(border=True):
         st.write(f"**Coba gratis {minutes:g} menit**")
@@ -1207,10 +1201,12 @@ def render_approval_gate(identity):
     st.markdown('<h1 class="solyn-auth-heading">Persetujuan akses</h1>', unsafe_allow_html=True)
     st.caption(f"Akun: {identity['email']}")
     render_trial_offer(identity, status)
+    trial_used = trial_available() and bool(trial_record_window(identity["email"]))
     if status == "pending":
-        st.info("**Menunggu persetujuan**  \nPermintaan akses Anda sedang menunggu pemeriksaan pengelola.")
+        prefix = "Masa coba gratis sudah habis. " if trial_used else ""
+        st.info("**Menunggu persetujuan**  \n" + prefix + "Permintaan akses Anda sedang menunggu persetujuan pengelola.")
     elif status == "rejected":
-        st.error("**Tidak dapat melanjutkan**  \nPermintaan akses belum disetujui. Hubungi pengelola jika Anda memerlukan peninjauan kembali.")
+        st.error("**Tidak dapat melanjutkan**  \nPermintaan akses Anda ditolak. Hubungi pengelola untuk peninjauan ulang.")
     elif status == "unavailable":
         # terjadi kalau Google Sheet sesaat gagal dibaca, halaman mencoba lagi sendiri tiap 10 detik
         st.info("**Memeriksa status akses**  \nMohon tunggu sebentar, halaman akan diperbarui otomatis.")
