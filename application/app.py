@@ -1198,6 +1198,13 @@ def render_trial_offer(identity, status):
 def render_approval_gate(identity):
     """Halaman yang muncul kalau akun Google belum di-approve admin."""
     status = access_status(identity)
+    if status == "rejected":
+        # akun yang ditolak cukup diberi tahu dan diberi tombol keluar
+        st.markdown('<h1 class="solyn-auth-heading">Akses ditolak</h1>', unsafe_allow_html=True)
+        st.caption(f"Akun: {identity['email']}")
+        st.error("**Tidak dapat melanjutkan**  \nAkses Anda ke aplikasi Solyn ditolak oleh pengelola.")
+        st.button("Keluar", key="v3_approval_logout", on_click=sign_out_v3)
+        return
     st.markdown('<h1 class="solyn-auth-heading">Persetujuan akses</h1>', unsafe_allow_html=True)
     st.caption(f"Akun: {identity['email']}")
     render_trial_offer(identity, status)
@@ -1205,8 +1212,6 @@ def render_approval_gate(identity):
     if status == "pending":
         prefix = "Masa coba gratis sudah habis. " if trial_used else ""
         st.info("**Menunggu persetujuan**  \n" + prefix + "Permintaan akses Anda sedang menunggu persetujuan pengelola.")
-    elif status == "rejected":
-        st.error("**Tidak dapat melanjutkan**  \nPermintaan akses Anda ditolak. Hubungi pengelola untuk peninjauan ulang.")
     elif status == "unavailable":
         # terjadi kalau Google Sheet sesaat gagal dibaca, halaman mencoba lagi sendiri tiap 10 detik
         st.info("**Memeriksa status akses**  \nMohon tunggu sebentar, halaman akan diperbarui otomatis.")
