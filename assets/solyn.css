@@ -36,12 +36,10 @@ button:focus-visible,input:focus-visible {outline:3px solid #1D4ED8!important;ou
 [data-testid="stSidebar"] .st-key-v3_nav, [data-testid="stSidebar"] .st-key-v3_nav [data-testid="stVerticalBlock"] {gap:.2rem!important}
 [data-testid="stSidebar"] .st-key-v3_nav button {background:transparent!important;border:1px solid transparent!important;box-shadow:none!important;justify-content:flex-start;text-align:left;min-height:2.2rem;padding:.35rem .5rem;color:#475569!important;gap:.4rem}
 [data-testid="stSidebar"] .st-key-v3_nav [data-testid="stIconMaterial"] {font-size:1.15rem}
-.st-key-v3_nav [data-testid="stElementContainer"]:has(.solyn-nav-label) {min-height:2rem!important}
 [data-testid="stSidebar"] .st-key-v3_nav button p {font-size:.88rem!important;font-weight:450;color:#475569!important}
 [data-testid="stSidebar"] .st-key-v3_nav button[kind="primary"] {background:#D9E5F4!important;border-color:#ded8cc!important}
 [data-testid="stSidebar"] .st-key-v3_nav button[kind="primary"] p {color:#475569!important;font-weight:650}
 [data-testid="stSidebar"] .st-key-v3_nav button:hover {background:#E2EAF4!important}
-.solyn-nav-label {font-size:.61rem;letter-spacing:.12em;color:#475569;font-weight:650;margin:0;padding:.55rem .65rem .2rem}
 .v3-logo {width:140px;margin:.4rem 0 .3rem}
 .v3-logo img {display:block;width:100%}
 .solyn-brand-note {font-size:.62rem;letter-spacing:.16em;color:#475569;margin:.05rem .45rem .8rem}
@@ -166,7 +164,6 @@ div.stButton>button, div.stDownloadButton>button {border-color:#718096}
 .st-key-v3_admin_baseline [data-testid="stFileUploaderDropzone"] {border:0!important;border-radius:0!important;background:transparent!important;padding:.35rem 0!important}
 .st-key-v3_admin_access [data-testid="stDataFrame"] {border:0!important;border-radius:0!important}
 .solyn-brand-note {font-size:.7rem;letter-spacing:0}
-.solyn-nav-label {font-size:.72rem;letter-spacing:0}
 .v3-result {animation:solyn-result-appear .28s ease-out both}
 @keyframes solyn-result-appear {from {opacity:0;transform:translateY(5px)} to {opacity:1;transform:translateY(0)}}
 @media(prefers-reduced-motion:reduce) {.v3-result {animation:none}}

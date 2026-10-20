@@ -2899,16 +2899,14 @@ def main():
             st.title("Solyn")
         st.markdown('<div class="solyn-brand-note">Riset saham perbankan</div>',unsafe_allow_html=True)
         with st.container(key="v3_nav"):
-            groups = [("Ruang kerja", ["home", "analysis", "portfolio"]),
-                      ("Data & metode", ["performance", "upload", "about"])]
+            # menu dibuat satu daftar tanpa judul kelompok
+            destinations = ["home", "analysis", "portfolio", "performance", "upload", "about"]
             if identity.get("is_admin"):
-                groups.append(("Administrasi", ["admin"]))
-            for label, destinations in groups:
-                st.markdown(f'<div class="solyn-nav-label">{escape(label)}</div>',unsafe_allow_html=True)
-                for destination in destinations:
-                    st.button(VIEWS[destination], type="primary" if view == destination else "secondary",
-                              key="v3_nav_" + destination, use_container_width=True,
-                              on_click=set_view, args=(destination,))
+                destinations.append("admin")
+            for destination in destinations:
+                st.button(VIEWS[destination], type="primary" if view == destination else "secondary",
+                          key="v3_nav_" + destination, use_container_width=True,
+                          on_click=set_view, args=(destination,))
         with st.container(key="v3_sidebar_footer"):
             render_data_sidebar()
             with st.container(key="v3_account"):
