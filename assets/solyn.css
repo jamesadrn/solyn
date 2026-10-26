@@ -77,12 +77,12 @@ button:focus-visible,input:focus-visible {outline:3px solid #1D4ED8!important;ou
 .solyn-hint:hover::after, .solyn-hint:focus-visible::after {opacity:1;visibility:visible}
 /* ikon di sisi kanan halaman memunculkan kotaknya ke arah kiri supaya tidak terpotong */
 .solyn-hint-right::after {left:auto;right:0}
-/* tablet: kartu Hasil Pengujian jadi dua kolom, jadi cuma kartu kolom kanan yang membuka ke kiri */
+/* tablet: kartu kolom kanan membuka ke kiri */
 @media (max-width: 900px) {
   .solyn-compare-card .solyn-hint-right::after {left:0;right:auto}
   .solyn-compare-card:nth-child(even) .solyn-hint::after {left:auto;right:0}
 }
-/* HP: semua kotak membuka ke kanan dari awal baris label, lebarnya mengikuti layar supaya tidak terpotong */
+/* HP: semua tooltip membuka ke kanan */
 @media (max-width: 640px) {
   .solyn-hint {position:static}
   :has(> .solyn-hint) {position:relative}
@@ -273,5 +273,5 @@ h1.solyn-auth-heading {font-family:Georgia,"Times New Roman",serif!important;fon
 .st-key-solyn_scenario_inputs [data-testid="stNumberInputStepUp"],
 .st-key-solyn_scenario_inputs [data-testid="stNumberInputStepDown"] {display:none}
 
-/* garis pemisah di atas menu Hasil Pengujian dan Tentang */
+/* garis di atas menu bagian bawah */
 [data-testid="stSidebar"] .st-key-v3_info {border-top:1px solid #dad5c9;padding-top:.6rem}

@@ -678,23 +678,38 @@ def format_date_id(value):
     return f"{date.day} {month_names[date.month - 1]} {date.year}"
 
 
+# warna grafik, disamakan dengan warna di solyn.css
+CHART_CANVAS = "#F7F9FC"
+CHART_INK = "#162235"
+CHART_TEXT = "#475569"
+CHART_GRID = "#E2E8F0"
+CHART_ZEROLINE = "#CBD5E1"
+CHART_REFERENCE = "#94A3B8"   # garis nol di grafik return
+CHART_GREEN = "#176342"       # naik
+CHART_RED = "#A4262C"         # turun
+CHART_MODEL = "#0072B2"       # portofolio model
+CHART_MODEL_FILL = "rgba(0,114,178,.10)"
+CHART_BENCHMARK = "#E69F00"   # portofolio pembanding
+CHART_ACTUAL = "#547086"      # return aktual
+CHART_FORECAST = "#A7372E"    # prediksi model
+CHART_FONT = "Segoe UI, Arial, sans-serif"
+CHART_CONFIG = {"displayModeBar": False}   # toolbar Plotly disembunyikan
+
+
 def oos_chart_layout(height, yaxis_title):
     """Layout bersama untuk grafik hasil pengujian 2025."""
     return {
         "height": height,
         "margin": {"l": 12, "r": 12, "t": 28, "b": 12},
-        "paper_bgcolor": "rgba(0,0,0,0)",
-        "plot_bgcolor": "rgba(0,0,0,0)",
         "hovermode": "x unified",
         "legend": {"orientation": "h", "y": 1.14, "x": 0},
-        "yaxis_title": yaxis_title,
+        "xaxis": {"showgrid": False},
+        "yaxis": {"showgrid": True, "title": yaxis_title},
     }
 
 
 def build_oos_charts(daily, quarterly):
     """Membuat 3 grafik halaman Hasil Pengujian: return kumulatif, drawdown, dan return per kuartal."""
-    model_color = "#0072B2"
-    benchmark_color = "#E69F00"
     model_quarterly = quarterly["Realized Return XGBoost-Markowitz (%)"]
     benchmark_quarterly = quarterly["Realized Return Historical Mean (%)"]
     cumulative = go.Figure()
@@ -702,20 +717,18 @@ def build_oos_charts(daily, quarterly):
         x=daily["snapshot_date"],
         y=daily["cum_xgb"] * 100,
         name="Portofolio Model",
-        line={"color": model_color, "width": 2.4},
+        line={"color": CHART_MODEL, "width": 2.4},
         hovertemplate="%{y:+.2f}%<extra></extra>",
     ))
     cumulative.add_trace(go.Scatter(
         x=daily["snapshot_date"],
         y=daily["cum_hist"] * 100,
         name="Portofolio Pembanding",
-        line={"color": benchmark_color, "width": 2, "dash": "dash"},
+        line={"color": CHART_BENCHMARK, "width": 2, "dash": "dash"},
         hovertemplate="%{y:+.2f}%<extra></extra>",
     ))
-    cumulative.add_hline(y=0, line_dash="dot", line_color="rgba(128,128,128,.45)")
+    cumulative.add_hline(y=0, line_dash="dot", line_color=CHART_REFERENCE)
     cumulative.update_layout(**oos_chart_layout(360, "Return kumulatif (%)"))
-    cumulative.update_xaxes(showgrid=False)
-    cumulative.update_yaxes(showgrid=True, gridcolor="rgba(128,128,128,.14)")
 
     model_wealth = (1 + daily["return_xgb"]).cumprod()
     benchmark_wealth = (1 + daily["return_hist"]).cumprod()
@@ -727,27 +740,25 @@ def build_oos_charts(daily, quarterly):
         y=model_drawdown,
         name="Portofolio Model",
         fill="tozeroy",
-        fillcolor="rgba(0,114,178,.10)",
-        line={"color": model_color, "width": 1.5},
+        fillcolor=CHART_MODEL_FILL,
+        line={"color": CHART_MODEL, "width": 1.5},
         hovertemplate="%{y:.2f}%<extra></extra>",
     ))
     drawdown.add_trace(go.Scatter(
         x=daily["snapshot_date"],
         y=benchmark_drawdown,
         name="Portofolio Pembanding",
-        line={"color": benchmark_color, "width": 1.7, "dash": "dash"},
+        line={"color": CHART_BENCHMARK, "width": 1.7, "dash": "dash"},
         hovertemplate="%{y:.2f}%<extra></extra>",
     ))
     drawdown.update_layout(**oos_chart_layout(310, "Drawdown (%)"))
-    drawdown.update_xaxes(showgrid=False)
-    drawdown.update_yaxes(showgrid=True, gridcolor="rgba(128,128,128,.14)")
 
     quarterly_chart = go.Figure()
     quarterly_chart.add_trace(go.Bar(
         x=quarterly["Kuartal"],
         y=model_quarterly,
         name="Portofolio Model",
-        marker_color=model_color,
+        marker_color=CHART_MODEL,
         text=[f"{value:+.2f}%" for value in model_quarterly],
         texttemplate="%{text}",
         textposition="outside",
@@ -759,7 +770,7 @@ def build_oos_charts(daily, quarterly):
         x=quarterly["Kuartal"],
         y=benchmark_quarterly,
         name="Portofolio Pembanding",
-        marker_color=benchmark_color,
+        marker_color=CHART_BENCHMARK,
         text=[f"{value:+.2f}%" for value in benchmark_quarterly],
         texttemplate="%{text}",
         textposition="outside",
@@ -767,21 +778,14 @@ def build_oos_charts(daily, quarterly):
         cliponaxis=False,
         hovertemplate="%{x}<br>%{y:+.2f}%<extra></extra>",
     ))
-    quarterly_layout = oos_chart_layout(400, "Return per kuartal (%)")
-    quarterly_layout["barmode"] = "group"
-    quarterly_layout["font"] = {"size": 14}
-    quarterly_layout["margin"] = {"l": 18, "r": 18, "t": 48, "b": 20}
-    quarterly_layout["legend"] = {
-        "orientation": "h", "y": 1.16, "x": 0, "font": {"size": 14},
-    }
-    quarterly_chart.update_layout(**quarterly_layout)
-    quarterly_chart.update_xaxes(showgrid=False, tickfont={"size": 14})
-    quarterly_chart.update_yaxes(
-        showgrid=True,
-        gridcolor="rgba(128,128,128,.14)",
-        tickfont={"size": 13},
-        title_font={"size": 15},
-    )
+    quarterly_chart.update_layout(**{
+        **oos_chart_layout(400, "Return per kuartal (%)"),
+        "barmode": "group",
+        "margin": {"l": 18, "r": 18, "t": 48, "b": 20},
+        "legend": {"orientation": "h", "y": 1.16, "x": 0, "font": {"size": 14}},
+    })
+    quarterly_chart.update_xaxes(tickfont={"size": 14})
+    quarterly_chart.update_yaxes(tickfont={"size": 13}, title_font={"size": 15})
     return cumulative, drawdown, quarterly_chart
 
 
@@ -1438,16 +1442,18 @@ def page_heading(kicker, title, description):
     st.markdown(f'<p class="v3-intro">{escape(description)}</p>', unsafe_allow_html=True)
 
 
-def style_chart(fig):
-    """Menyamakan gaya semua grafik dengan tema aplikasi."""
-    fig.update_layout(paper_bgcolor="#F7F9FC", plot_bgcolor="#F7F9FC",
-                      font=dict(family="Segoe UI, Arial, sans-serif",size=16,color="#475569"),
-                      colorway=["#153E75", "#176342", "#805500", "#5D4C91"],
-                      legend=dict(bgcolor="rgba(0,0,0,0)",font=dict(size=14,color="#475569")),
-                      hoverlabel=dict(bgcolor="#FFFFFF",font_color="#292823",bordercolor="#D7CDBB"))
-    fig.update_xaxes(gridcolor="#E7E1D5",zerolinecolor="#C9BDA9")
-    fig.update_yaxes(gridcolor="#E7E1D5",zerolinecolor="#C9BDA9")
-    return fig
+def render_chart(fig):
+    """Menyamakan gaya grafik dengan tema aplikasi, lalu menampilkannya."""
+    fig.update_layout(
+        paper_bgcolor=CHART_CANVAS, plot_bgcolor=CHART_CANVAS,
+        font={"family": CHART_FONT, "size": 16, "color": CHART_TEXT},
+        colorway=[CHART_MODEL, CHART_BENCHMARK, CHART_GREEN, CHART_RED],
+        legend={"bgcolor": "rgba(0,0,0,0)", "font": {"size": 14, "color": CHART_TEXT}},
+        hoverlabel={"bgcolor": "#FFFFFF", "font_color": CHART_INK, "bordercolor": CHART_ZEROLINE},
+    )
+    fig.update_xaxes(gridcolor=CHART_GRID, zerolinecolor=CHART_ZEROLINE)
+    fig.update_yaxes(gridcolor=CHART_GRID, zerolinecolor=CHART_ZEROLINE)
+    st.plotly_chart(fig, use_container_width=True, config=CHART_CONFIG)
 
 
 def build_home_price_chart(history, ticker):
@@ -1464,7 +1470,7 @@ def build_home_price_chart(history, ticker):
         y=selected["Close"],
         mode="lines",
         name=ticker,
-        line={"color": "#176342", "width": 2},
+        line={"color": CHART_GREEN, "width": 2},
         hovertemplate="%{x|%d %b %Y}<br>Harga %{y:,.0f}<extra></extra>",
     ))
     figure.update_layout(
@@ -1543,7 +1549,7 @@ def render_home():
     if figure is None:
         st.info(f"Riwayat harga {chart_ticker} belum tersedia.")
     else:
-        st.plotly_chart(style_chart(figure), use_container_width=True, config={"displayModeBar": False})
+        render_chart(figure)
         selected_dates = price_history.loc[price_history["Ticker"].eq(chart_ticker), "Date"]
         if not selected_dates.empty:
             st.caption(f"Sumber: Ringkasan Saham IDX · disesuaikan terhadap stock split · data sampai {date_label(selected_dates.max())}. "
@@ -1598,7 +1604,7 @@ def render_explanation(model, values, prediction):
                                   "Kontribusi (poin persentase)":terms[:-1] * 100})
             frame = frame.iloc[np.argsort(np.abs(terms[:-1]))]
             fig = go.Figure(go.Bar(x=frame.iloc[:,1], y=frame.iloc[:,0], orientation="h",
-                marker_color=["#176342" if x >= 0 else "#A4262C" for x in frame.iloc[:,1]],
+                marker_color=[CHART_GREEN if x >= 0 else CHART_RED for x in frame.iloc[:,1]],
                 hovertemplate="%{y}<br>%{x:+.4f} poin persentase<extra></extra>"))
             fig.update_layout(height=390, margin=dict(l=0,r=15,t=15,b=10), xaxis_title="Kontribusi terhadap prediksi (poin persentase)")
             # dua penjelasan ditaruh berdampingan dalam satu baris
@@ -1612,7 +1618,7 @@ def render_explanation(model, values, prediction):
                 f'<p class="solyn-field-label">Perhitungan<i class="solyn-hint" data-tip="{escape(CALC_HELP)}">?</i></p>'
                 f'<p class="solyn-section-note">Nilai dasar {terms[-1]*100:+.3f}% ditambah kontribusi seluruh '
                 f'indikator menghasilkan prediksi {prediction*100:+.3f}%.</p>', unsafe_allow_html=True)
-            st.plotly_chart(style_chart(fig), use_container_width=True, config={"displayModeBar":False})
+            render_chart(fig)
             st.caption("Grafik dapat diperbesar dengan menyeret kursor. Klik dua kali pada grafik untuk kembali ke tampilan awal.")
             st.markdown(
                 '<p class="v3-disclaimer">SHAP menjelaskan cara model menghitung angkanya, bukan penyebab naik '
@@ -1826,7 +1832,7 @@ def render_portfolio():
     portfolio = metadata.get("portfolio")
     if not portfolio or not portfolio.get("covariance"):
         st.warning("Data bersama antar saham belum cukup untuk simulasi. Analisis satu saham tetap dapat digunakan.")
-        st.button("Buka analisis saham", on_click=set_view, args=("analysis",))
+        st.button("Buka Prediksi Saham", on_click=set_view, args=("analysis",))
         return
     available = [ticker for ticker in DESIGN_TICKERS if ticker in portfolio["tickers"] and ticker in models]
     scope_version = version + "|" + ",".join(DESIGN_TICKERS)
@@ -1882,7 +1888,7 @@ def render_portfolio():
                 covariance = pd.DataFrame(portfolio["covariance"], dtype=float).loc[selected,selected].to_numpy(copy=True)
                 # rate diisi persen per tahun, yang dihitung di bawah return harian. Beda satuan.
                 # 252 itu kira-kira jumlah hari bursa setahun, jadi bunga setahun dipecah jadi sehari.
-                rf = (1+rate/100)**(1/252)-1
+                rf = rate / 100 / 252
                 weights = optimize_max_sharpe(expected.to_numpy(), covariance.copy(), rf, cap/100)
                 if abs(weights.sum()-1)>1e-6 or weights.max()>cap/100+1e-6:
                     raise ValueError("Allocation constraints failed")
@@ -1913,7 +1919,7 @@ def render_portfolio():
     predictions = frame.set_index("Saham").loc[selected, "Prediksi return (%)"].sort_values()
     fig_pred = go.Figure(go.Bar(
         x=predictions.to_numpy(), y=list(predictions.index), orientation="h",
-        marker_color=["#176342" if value >= 0 else "#A4262C" for value in predictions],
+        marker_color=[CHART_GREEN if value >= 0 else CHART_RED for value in predictions],
         text=[f"{value:+.3f}%" for value in predictions], textposition="outside",
         hovertemplate="%{y}<br>%{x:+.3f}%<extra></extra>"))
     # sumbu diberi ruang tambahan supaya angka di ujung batang tidak terpotong
@@ -1922,7 +1928,7 @@ def render_portfolio():
                            xaxis_title="Prediksi return hari bursa berikutnya (%)",
                            xaxis_range=[min(float(predictions.min()), 0) - span * .45,
                                         max(float(predictions.max()), 0) + span * .45])
-    st.plotly_chart(style_chart(fig_pred), use_container_width=True, config={"displayModeBar":False})
+    render_chart(fig_pred)
     st.subheader("Perkiraan hasil portofolio")
     a,b,c = st.columns(3)
     a.metric("Return satu hari", f"{result['ret']*100:+.3f}%", help="Perkiraan perubahan nilai portofolio untuk satu hari perdagangan berikutnya.")
@@ -1937,18 +1943,18 @@ def render_portfolio():
     steps = [allocation_color(value / largest if largest else 1.0) for value in weights_pct]
     fig = go.Figure(go.Pie(
         labels=pie_frame["Saham"], values=pie_frame["Bobot (%)"], hole=.45,
-        marker=dict(colors=steps, line=dict(color="#F7F9FC", width=2)),
+        marker=dict(colors=steps, line=dict(color=CHART_CANVAS, width=2)),
         text=[rupiah(value) for value in pie_frame["Dana (Rp)"]],
         texttemplate="%{label}<br>%{value:.1f}%<br>%{text}", textposition="inside",
-        insidetextorientation="horizontal", textfont=dict(size=12, color="#162235"),
+        insidetextorientation="horizontal", textfont=dict(size=12, color=CHART_INK),
         hovertemplate="%{label}<br>Bobot %{value:.2f}%<br>%{text}<extra></extra>",
         sort=False, showlegend=False,
     ))
     fig.update_layout(height=520, margin=dict(l=8,r=8,t=10,b=10),
                       uniformtext=dict(minsize=11, mode="hide"),
                       annotations=[dict(text=f"Total dana<br><b>{rupiah(capital)}</b>", x=.5, y=.5,
-                                        showarrow=False, font=dict(size=15, color="#162235"))])
-    st.plotly_chart(style_chart(fig), use_container_width=True, config={"displayModeBar":False})
+                                        showarrow=False, font=dict(size=15, color=CHART_INK))])
+    render_chart(fig)
     st.download_button("Unduh hasil simulasi CSV (Opsional)", simulation_csv(frame, metadata.get("market_data_date"), capital, rate, cap),
                        "simulasi_portofolio.csv", "text/csv")
     # tombol utama menuju halaman Hasil Pengujian
@@ -2070,18 +2076,18 @@ def render_performance():
             fig = go.Figure()
             fig.add_trace(go.Scatter(
                 x=selected["target_date"], y=actual, mode="markers", name="Return aktual",
-                marker=dict(color="#547086", size=6, opacity=0.55),
+                marker=dict(color=CHART_ACTUAL, size=6, opacity=0.55),
                 hovertemplate="%{x|%d %b %Y}<br>Aktual %{y:+.2f}%<extra></extra>",
             ))
             fig.add_trace(go.Scatter(
                 x=selected["target_date"], y=forecast, mode="lines", name="Prediksi model",
-                line=dict(color="#A7372E", width=2.5),
+                line=dict(color=CHART_FORECAST, width=2.5),
                 hovertemplate="%{x|%d %b %Y}<br>Prediksi %{y:+.2f}%<extra></extra>",
             ))
-            fig.add_hline(y=0, line_color="#8B9296", line_width=1)
+            fig.add_hline(y=0, line_color=CHART_REFERENCE, line_width=1)
             fig.update_layout(height=400, yaxis_title="Return satu hari berikutnya (%)",
                               hovermode="x unified", legend=dict(orientation="h", y=1.08))
-            st.plotly_chart(style_chart(fig), use_container_width=True, config={"displayModeBar": False})
+            render_chart(fig)
             st.caption("Titik menunjukkan hasil aktual tiap hari. Garis menunjukkan prediksi model pada skala yang sama. Garis yang hampir datar berarti model belum menangkap perubahan harian dengan baik.")
             forecast_variation = np.std(forecast, ddof=1)
             actual_variation = np.std(actual, ddof=1)
@@ -2138,22 +2144,16 @@ def render_performance():
             bnli_2025 = bnli[bnli["snapshot_date"].dt.year == 2025].sort_values("snapshot_date")
             if len(bnli_2025) > 1:
                 bnli_change = (bnli_2025["close_adj"].iloc[-1] / bnli_2025["close_adj"].iloc[0] - 1) * 100
-                robustness = research_file("portfolio_robustness_2025.parquet")
-                without_bnli = robustness.loc[robustness["Skenario"] == "10 saham tanpa BNLI", "Return kumulatif (%)"] if not robustness.empty else pd.Series(dtype=float)
-                without_note = f" Tanpa BNLI, return portofolio menjadi {without_bnli.iloc[0]:+.2f}%." if len(without_bnli) == 1 else ""
-                st.info(f"**Pengaruh saham BNLI**  \nHarga BNLI naik {bnli_change:.1f}% sepanjang 2025, sehingga sangat memengaruhi hasil portofolio.{without_note}")
+                st.info(f"**Pengaruh saham BNLI**  \nHarga BNLI naik {bnli_change:.1f}% sepanjang 2025, sehingga sangat memengaruhi hasil portofolio.")
         cumulative, drawdown, quarter_chart = build_oos_charts(daily, quarterly)
         st.subheader("Perkembangan return kumulatif")
         st.caption("Return kumulatif adalah perubahan nilai yang terakumulasi sepanjang periode.")
-        style_chart(cumulative)
-        st.plotly_chart(cumulative, use_container_width=True, config={"displayModeBar":False})
+        render_chart(cumulative)
         st.subheader("Drawdown")
         st.caption("Penurunan nilai dari puncak portofolio sebelumnya.")
-        style_chart(drawdown)
-        st.plotly_chart(drawdown, use_container_width=True, config={"displayModeBar":False})
+        render_chart(drawdown)
         st.subheader("Rincian per kuartal")
-        style_chart(quarter_chart)
-        st.plotly_chart(quarter_chart, use_container_width=True, config={"displayModeBar":False})
+        render_chart(quarter_chart)
         st.caption("Hasil historis tidak menjamin hasil pada masa mendatang. Pembagian dana ini merupakan simulasi penelitian.")
     except Exception:
         LOGGER.exception("Research results unavailable")

@@ -291,7 +291,7 @@ def build_portfolio_allocation(
     covariance_frame = returns[tickers].cov()
     covariance = covariance_frame.to_numpy()
     # mengubah risk-free tahunan jadi harian, 252 hari bursa per tahun
-    risk_free_daily = (1 + risk_free_annual) ** (1 / 252) - 1
+    risk_free_daily = risk_free_annual / 252
     if len(tickers) == 1:
         weights = np.array([1.0])
     else:
