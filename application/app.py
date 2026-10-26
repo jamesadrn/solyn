@@ -126,13 +126,13 @@ INFERRED_SPLIT_CODES = {"CA", "XA", "CB", "XB"}
 FEATURE_HELP = {
     "SMA10": "Rata-rata harga penutupan 10 hari terakhir. Dipakai untuk melihat arah tren jangka pendek.",
     "SMA20": "Rata-rata harga penutupan 20 hari terakhir. Dipakai untuk melihat arah tren yang lebih panjang.",
-    "EMA10": "Rata-rata 10 hari yang memberi bobot lebih besar pada harga terbaru.",
-    "RSI14": "Ukuran 0 sampai 100 untuk kekuatan kenaikan harga 14 hari terakhir. Di atas 70 dianggap sudah mahal, di bawah 30 dianggap murah.",
-    "MACD": "Selisih dua rata-rata harga. Nilai positif menandakan tren sedang naik.",
-    "Signal": "Garis rata-rata dari MACD, dipakai sebagai pembanding nilai MACD.",
-    "BB_Upper": "Batas atas kisaran harga yang wajar menurut Bollinger Bands.",
-    "BB_Lower": "Batas bawah kisaran harga yang wajar menurut Bollinger Bands.",
-    "Stochastic_%K": "Posisi harga penutupan terhadap kisaran harga beberapa hari terakhir, dalam skala 0 sampai 100.",
+    "EMA10": "Mirip SMA10, tapi harga hari-hari terakhir dibuat lebih berpengaruh. Jadi lebih cepat menangkap perubahan arah harga.",
+    "RSI14": "Ukuran 0 sampai 100 untuk kekuatan kenaikan harga 14 hari terakhir. Di atas 70 berarti harga sudah naik banyak dalam waktu singkat. Di bawah 30 berarti harga sudah turun banyak.",
+    "MACD": "Selisih rata-rata harga 12 hari dan 26 hari. Positif berarti harga jangka pendek sedang di atas jangka panjang, tanda harga sedang naik.",
+    "Signal": "Rata-rata MACD 9 hari terakhir. Kalau MACD di atas Signal, kenaikan harga sedang menguat. Kalau di bawah, sedang melemah.",
+    "BB_Upper": "Batas atas kisaran harga yang biasa terjadi. Dihitung dari rata-rata harga 20 hari ditambah dua kali besar naik turunnya harga. Harga di dekat batas ini berarti sedang tinggi dibanding biasanya.",
+    "BB_Lower": "Batas bawah kisaran harga yang biasa terjadi. Dihitung dari rata-rata harga 20 hari dikurangi dua kali besar naik turunnya harga. Harga di dekat batas ini berarti sedang rendah dibanding biasanya.",
+    "Stochastic_%K": "Posisi harga penutupan hari ini di antara harga terendah dan tertinggi 14 hari terakhir. 100 berarti tutup di harga tertinggi, 0 berarti di harga terendah.",
     "ATR14": "Rata-rata besar gerak harga harian dalam 14 hari terakhir. Makin besar, harganya makin bergejolak.",
 }
 
@@ -149,9 +149,10 @@ FEATURE_LABELS = {
     "ATR14": "ATR14",
 }
 
-INDICATOR_HELP = ("Indikator teknikal adalah angka yang dihitung dari harga saham beberapa hari terakhir. "
-                  "Angka ini dipakai model untuk menebak harga besok, seperti melihat jejak kaki untuk menebak "
-                  "arah jalan seseorang.")
+INDICATOR_HELP = ("Indikator teknikal adalah alat bantu yang umum dipakai investor untuk membaca pergerakan "
+                  "harga saham. Bentuknya angka yang dihitung dengan rumus dari harga beberapa hari terakhir. "
+                  "Contohnya SMA10, yaitu rata-rata harga penutupan 10 hari terakhir. "
+                  "Di Solyn, sepuluh indikator ini dipakai model untuk memperkirakan return hari perdagangan berikutnya.")
 
 
 # ---------------------------------------------------------------------------
@@ -1577,8 +1578,8 @@ def feature_errors(values):
 SHAP_HELP = ("SHAP adalah cara melihat indikator mana yang paling membuat angka prediksi naik atau turun. "
              "Setiap indikator diberi nilai: tanda plus berarti ikut menaikkan, tanda minus berarti ikut menurunkan.")
 
-CALC_HELP = ("Model mulai dari satu angka awal yang sama untuk semua hari. Lalu setiap indikator menambah atau "
-             "mengurangi angka itu sedikit demi sedikit, sampai akhirnya menjadi angka prediksi yang Anda lihat.")
+CALC_HELP = ("Mirip struk belanja. Model mulai dari nilai dasar, yaitu rata-rata return dari data lama. "
+             "Lalu setiap indikator menambah atau mengurangi nilai itu, sampai totalnya menjadi angka prediksi.")
 
 
 def render_explanation(model, values, prediction):
@@ -1608,7 +1609,7 @@ def render_explanation(model, values, prediction):
                 'batang merah menariknya ke bawah. Makin panjang batangnya, makin besar pengaruhnya.</p>',
                 unsafe_allow_html=True)
             right.markdown(
-                f'<p class="solyn-field-label">Perhitungan<i class="solyn-hint solyn-hint-right" data-tip="{escape(CALC_HELP)}">?</i></p>'
+                f'<p class="solyn-field-label">Perhitungan<i class="solyn-hint" data-tip="{escape(CALC_HELP)}">?</i></p>'
                 f'<p class="solyn-section-note">Nilai dasar {terms[-1]*100:+.3f}% ditambah kontribusi seluruh '
                 f'indikator menghasilkan prediksi {prediction*100:+.3f}%.</p>', unsafe_allow_html=True)
             st.plotly_chart(style_chart(fig), use_container_width=True, config={"displayModeBar":False})
@@ -1625,9 +1626,8 @@ def render_latest_indicators(values, data_date):
     """Nilai indikator yang dipakai model, dengan penjelasan saat kursor diarahkan ke tanda tanya."""
     rows = "".join(
         f'<div><span>{escape(FEATURE_LABELS[f])}'
-        f'<i class="solyn-hint{" solyn-hint-right" if index % 2 else ""}" '
-        f'data-tip="{escape(FEATURE_HELP[f])}">?</i></span>'
-        f'<b>{values[f]:,.4f}</b></div>' for index, f in enumerate(FEATURES))
+        f'<i class="solyn-hint" data-tip="{escape(FEATURE_HELP[f])}">?</i></span>'
+        f'<b>{values[f]:,.4f}</b></div>' for f in FEATURES)
     st.markdown(f'<p class="solyn-field-label">Nilai indikator berdasarkan data tanggal {escape(date_label(data_date))}'
                 f'<i class="solyn-hint" data-tip="{escape(INDICATOR_HELP)}">?</i></p>'
                 f'<div class="solyn-indicators">{rows}</div>', unsafe_allow_html=True)
@@ -1852,7 +1852,8 @@ def render_portfolio():
                   "keuntungan portofolio dihitung bagus kalau lebih tinggi daripada angka ini. Nilai awalnya mengikuti "
                   "asumsi yang dipakai saat model dibuat, bukan suku bunga Bank Indonesia hari ini.")
         cap = st.number_input("Batas maksimal alokasi satu saham (%)", min_value=1.0, max_value=100.0, value=20.0, step=1.0,
-                              key=portfolio_key("v3_cap"))
+                              key=portfolio_key("v3_cap"),
+                              help="Persentase dana terbesar yang boleh masuk ke satu saham, supaya dana tidak menumpuk di satu saham saja.")
     problem = allocation_problem(len(selected), cap, len(DESIGN_TICKERS))
     minimum = max(2, int(np.ceil(100 / cap - 1e-10)))
     if minimum > len(DESIGN_TICKERS):
@@ -1925,8 +1926,8 @@ def render_portfolio():
     st.subheader("Perkiraan hasil portofolio")
     a,b,c = st.columns(3)
     a.metric("Return satu hari", f"{result['ret']*100:+.3f}%", help="Perkiraan perubahan nilai portofolio untuk satu hari perdagangan berikutnya.")
-    b.metric("Volatilitas harian", f"{result['vol']*100:.3f}%", help="Besar kecilnya perubahan return harian, bukan batas kerugian maksimum.")
-    c.metric("Sharpe harian", f"{result['sharpe']:.3f}", help="Perkiraan return di atas bunga acuan dibandingkan dengan volatilitas harian.")
+    b.metric("Volatilitas harian", f"{result['vol']*100:.3f}%", help="Seberapa besar nilai portofolio biasanya naik turun dalam sehari. Makin besar, makin berisiko.")
+    c.metric("Sharpe harian", f"{result['sharpe']:.3f}", help="Keuntungan untuk setiap satuan risiko, setelah dikurangi bunga tanpa risiko. Makin tinggi makin baik.")
     st.subheader("Bobot alokasi dan pembagian dana")
     st.caption("Simulasi belum memperhitungkan biaya transaksi, pajak, slippage (selisih harga saat transaksi), dan pembulatan ke satuan lot pembelian saham.")
     pie_frame = frame[frame["Bobot (%)"] > 1e-7]
@@ -2052,7 +2053,7 @@ def render_performance():
                 rmse_note += f" Kalau prediksinya selalu ditulis 0%, angkanya {zero_rmse:.3f}."
             render_metric_cards([
                 ("RMSE", f"{row['RMSE']*100:.3f}", rmse_note),
-                ("MAE", f"{row['MAE']*100:.3f}", "Tiap hari prediksi meleset sebesar angka ini dari hasil aktual, dalam poin persen."),
+                ("MAE", f"{row['MAE']*100:.3f}", "Rata-rata besar meleset prediksi setiap hari dari hasil aktual, dalam poin persen."),
                 ("R²", f"{row['R2 Score']:.3f}", "Nilai 0 setara dengan selalu menebak angka rata-rata. Di atas 0 lebih baik daripada tebakan itu, di bawah 0 lebih buruk."),
                 ("Directional accuracy", f"{row['Directional Accuracy (%)']:.1f}%", "Persentase hari ketika arah naik atau turun ditebak dengan benar. Menebak arah secara acak menghasilkan sekitar 50%."),
             ])
@@ -2112,10 +2113,11 @@ def render_performance():
              "Makin rendah berarti pergerakannya makin tenang.",
              *pair("Annualized Volatility (%)"), "{:.2f}%", False),
             ("Max Drawdown", "Penurunan terdalam dari posisi tertinggi sebelum nilainya naik lagi. "
-             "Makin mendekati nol berarti penurunannya makin dangkal.",
+             "Makin mendekati nol berarti penurunannya makin dangkal. "
+             "Contoh: dari Rp100 juta turun ke Rp85 juta, drawdown-nya −15%.",
              drawdowns[model_col], drawdowns[benchmark_col], "{:.2f}%", True),
-            ("Sharpe ratio", "Keuntungan dibandingkan dengan risikonya. Di atas 1 dianggap bagus, di bawah 0 berarti "
-             "hasilnya kalah dari menyimpan uang tanpa risiko.",
+            ("Sharpe ratio", "Keuntungan dibandingkan dengan risikonya. Mirip menilai pekerjaan dari gaji per jam, "
+             "bukan total gajinya. Di atas 1 dianggap bagus, di bawah 0 berarti kalah dari menyimpan uang di deposito.",
              *pair("Sharpe Ratio"), "{:.3f}", True),
         ]
         # judul ditulis sendiri pakai HTML karena tanda tanya bawaan Streamlit baru muncul
@@ -2476,11 +2478,11 @@ def render_about():
              "perkiraan model dan simulasi penelitian, bukan saran investasi.")
     st.subheader("Penjelasan halaman")
     sections = {
-        "Home": "Lihat harga terakhir dan tanggal data. Pilih Analisis saham atau Simulasi portofolio untuk mulai.",
+        "Home": "Lihat harga terakhir dan tanggal data. Pilih Prediksi Saham atau Simulasi Portofolio untuk mulai.",
         "Prediksi Saham": "Pilih saham lalu tekan Buat prediksi. Return adalah persentase perubahan harga saham. Periksa tanggal target dan indikator yang memengaruhi hasil. Gunakan Skenario Sendiri bila ingin mencoba nilai indikator lain.",
         "Simulasi Portofolio": "Pilih saham, masukkan modal, lalu tekan Hitung alokasi. Hasil menunjukkan bobot dan nominal pembagian dana. Dengan batas 20% per saham, pilih minimal 5 saham. Setelah mengubah masukan, hitung kembali.",
-        "Hasil Pengujian": "Pilih Portofolio atau Prediksi saham. Baca empat ukuran utama di bagian atas, lalu lihat grafik di bawahnya. Penjelasan setiap ukuran tersedia pada tanda tanya di sampingnya.",
         "Unggah Data": "Unduh file Ringkasan Saham harian dari situs IDX tanpa mengubah nama atau isinya, lalu unggah maksimal 30 file sekaligus. Tanggal file harus melanjutkan data aplikasi. Setelah lolos pemeriksaan, pilih saham dan tekan Latih model sementara. Model ini hanya tersimpan selama sesi Anda.",
+        "Hasil Pengujian": "Pilih Evaluasi Portofolio atau Evaluasi Model. Baca empat ukuran utama di bagian atas, lalu lihat grafik di bawahnya. Penjelasan setiap ukuran tersedia pada tanda tanya di sampingnya.",
     }
     for heading, body in sections.items():
         st.markdown(f"**{heading}**")
@@ -2899,16 +2901,22 @@ def main():
         else:
             st.title("Solyn")
         st.markdown('<div class="solyn-brand-note">Riset saham perbankan</div>',unsafe_allow_html=True)
-        with st.container(key="v3_nav"):
-            # menu dibuat satu daftar tanpa judul kelompok
-            destinations = ["home", "analysis", "portfolio", "performance", "upload", "about"]
-            if identity.get("is_admin"):
-                destinations.append("admin")
+        def nav_buttons(destinations):
             for destination in destinations:
                 st.button(VIEWS[destination], type="primary" if view == destination else "secondary",
                           key="v3_nav_" + destination, use_container_width=True,
                           on_click=set_view, args=(destination,))
+
+        # menu fitur aplikasi di atas
+        with st.container(key="v3_nav"):
+            nav_buttons(["home", "analysis", "portfolio", "upload"])
+        # bagian bawah: Hasil Pengujian, Tentang, dan Panel Admin (dipisah garis), data harga, lalu akun
         with st.container(key="v3_sidebar_footer"):
+            with st.container(key="v3_info"):
+                bottom = ["performance", "about"]
+                if identity.get("is_admin"):
+                    bottom.append("admin")
+                nav_buttons(bottom)
             render_data_sidebar()
             with st.container(key="v3_account"):
                 if identity.get("trial"):

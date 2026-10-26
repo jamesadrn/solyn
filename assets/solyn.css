@@ -33,13 +33,13 @@ div.stButton>button[kind="primary"] p {color:#fff!important}
 div.stButton>button[kind="primary"]:hover {background:#0E2B52;border-color:#0E2B52}
 div.stButton>button:disabled {opacity:.45}
 button:focus-visible,input:focus-visible {outline:3px solid #1D4ED8!important;outline-offset:3px}
-[data-testid="stSidebar"] .st-key-v3_nav, [data-testid="stSidebar"] .st-key-v3_nav [data-testid="stVerticalBlock"] {gap:.2rem!important}
-[data-testid="stSidebar"] .st-key-v3_nav button {background:transparent!important;border:1px solid transparent!important;box-shadow:none!important;justify-content:flex-start;text-align:left;min-height:2.2rem;padding:.35rem .5rem;color:#475569!important;gap:.4rem}
-[data-testid="stSidebar"] .st-key-v3_nav [data-testid="stIconMaterial"] {font-size:1.15rem}
-[data-testid="stSidebar"] .st-key-v3_nav button p {font-size:.88rem!important;font-weight:450;color:#475569!important}
-[data-testid="stSidebar"] .st-key-v3_nav button[kind="primary"] {background:#D9E5F4!important;border-color:#ded8cc!important}
-[data-testid="stSidebar"] .st-key-v3_nav button[kind="primary"] p {color:#475569!important;font-weight:650}
-[data-testid="stSidebar"] .st-key-v3_nav button:hover {background:#E2EAF4!important}
+[data-testid="stSidebar"] :is(.st-key-v3_nav,.st-key-v3_info), [data-testid="stSidebar"] :is(.st-key-v3_nav,.st-key-v3_info) [data-testid="stVerticalBlock"] {gap:.2rem!important}
+[data-testid="stSidebar"] :is(.st-key-v3_nav,.st-key-v3_info) button {background:transparent!important;border:1px solid transparent!important;box-shadow:none!important;justify-content:flex-start;text-align:left;min-height:2.2rem;padding:.35rem .5rem;color:#475569!important;gap:.4rem}
+[data-testid="stSidebar"] :is(.st-key-v3_nav,.st-key-v3_info) [data-testid="stIconMaterial"] {font-size:1.15rem}
+[data-testid="stSidebar"] :is(.st-key-v3_nav,.st-key-v3_info) button p {font-size:.88rem!important;font-weight:450;color:#475569!important}
+[data-testid="stSidebar"] :is(.st-key-v3_nav,.st-key-v3_info) button[kind="primary"] {background:#D9E5F4!important;border-color:#ded8cc!important}
+[data-testid="stSidebar"] :is(.st-key-v3_nav,.st-key-v3_info) button[kind="primary"] p {color:#475569!important;font-weight:650}
+[data-testid="stSidebar"] :is(.st-key-v3_nav,.st-key-v3_info) button:hover {background:#E2EAF4!important}
 .v3-logo {width:140px;margin:.4rem 0 .3rem}
 .v3-logo img {display:block;width:100%}
 .solyn-brand-note {font-size:.62rem;letter-spacing:.16em;color:#475569;margin:.05rem .45rem .8rem}
@@ -73,10 +73,22 @@ button:focus-visible,input:focus-visible {outline:3px solid #1D4ED8!important;ou
 .solyn-guide-caption b {color:#162235}
 .solyn-hint {position:relative;font-style:normal;display:inline-flex;align-items:center;justify-content:center;vertical-align:-.1em;margin-left:.4rem;width:1.15em;height:1.15em;border:1px solid #CBD5E1;border-radius:50%;font-size:.75rem;font-weight:400;color:#475569;cursor:help}
 /* kotak penjelasan dibuat sendiri supaya gayanya sama dengan tooltip bawaan Streamlit */
-.solyn-hint::after {content:attr(data-tip);position:absolute;bottom:calc(100% + .55rem);left:0;width:max-content;max-width:280px;padding:.7rem .85rem;background:#FFFFFF;color:#162235;border:1px solid #CBD5E1;border-radius:10px;box-shadow:0 6px 18px rgba(22,34,53,.16);font-size:.85rem;font-weight:400;line-height:1.55;text-align:left;white-space:normal;opacity:0;visibility:hidden;transition:opacity .12s ease;pointer-events:none;z-index:60}
+.solyn-hint::after {content:attr(data-tip);position:absolute;bottom:calc(100% + .55rem);left:0;width:max-content;max-width:260px;padding:.55rem .7rem;background:#FFFFFF;color:#162235;border:1px solid #CBD5E1;border-radius:10px;box-shadow:0 6px 18px rgba(22,34,53,.16);font-size:.78rem;font-weight:400;line-height:1.55;text-align:left;white-space:normal;opacity:0;visibility:hidden;transition:opacity .12s ease;pointer-events:none;z-index:60}
 .solyn-hint:hover::after, .solyn-hint:focus-visible::after {opacity:1;visibility:visible}
 /* ikon di sisi kanan halaman memunculkan kotaknya ke arah kiri supaya tidak terpotong */
 .solyn-hint-right::after {left:auto;right:0}
+/* tablet: kartu Hasil Pengujian jadi dua kolom, jadi cuma kartu kolom kanan yang membuka ke kiri */
+@media (max-width: 900px) {
+  .solyn-compare-card .solyn-hint-right::after {left:0;right:auto}
+  .solyn-compare-card:nth-child(even) .solyn-hint::after {left:auto;right:0}
+}
+/* HP: semua kotak membuka ke kanan dari awal baris label, lebarnya mengikuti layar supaya tidak terpotong */
+@media (max-width: 640px) {
+  .solyn-hint {position:static}
+  :has(> .solyn-hint) {position:relative}
+  .solyn-hint::after, .solyn-hint-right::after,
+  .solyn-compare-card:nth-child(even) .solyn-hint::after {left:0;right:auto;max-width:min(260px, calc(100vw - 5rem));font-size:.76rem}
+}
 /* daftar nilai indikator terbaru, tanda tanya memunculkan penjelasan saat kursor diarahkan */
 .solyn-indicators {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 1.6rem;margin:0 0 1.1rem}
 .solyn-indicators > div {display:flex;justify-content:space-between;align-items:baseline;gap:1rem;padding:.5rem 0;border-bottom:1px solid #eeeae1;font-size:.88rem}
@@ -135,8 +147,8 @@ div.stButton>button, div.stDownloadButton>button {border-color:#718096}
 [data-baseweb="select"]>div, [data-testid="stNumberInputContainer"],
 [data-baseweb="input"], [data-testid="stExpander"] {border-color:#718096!important}
 [data-testid="stPopover"] button {border-color:#718096}
-[data-testid="stSidebar"] .st-key-v3_nav button[kind="primary"] {border-color:#53749C!important;border-left:3px solid #153E75!important}
-[data-testid="stSidebar"] .st-key-v3_nav button[kind="primary"] p {color:#12325B!important}
+[data-testid="stSidebar"] :is(.st-key-v3_nav,.st-key-v3_info) button[kind="primary"] {border-color:#53749C!important;border-left:3px solid #153E75!important}
+[data-testid="stSidebar"] :is(.st-key-v3_nav,.st-key-v3_info) button[kind="primary"] p {color:#12325B!important}
 .solyn-table {display:table!important;margin:0!important;border-spacing:0}
 .solyn-table-wrap {padding:0!important}
 .solyn-table-wrap > table {margin-block:0!important}
@@ -194,10 +206,10 @@ div[class*="_google_wrap"] button[data-testid] span { color: #1F1F1F !important;
 }
 
 /* menu samping rata kiri */
-[data-testid="stSidebar"] .st-key-v3_nav button > div,
-[data-testid="stSidebar"] .st-key-v3_nav button [data-testid="stMarkdownContainer"] {justify-content:flex-start!important;text-align:left!important;width:100%}
-[data-testid="stSidebar"] .st-key-v3_nav button p {text-align:left!important;width:100%}
-[data-testid="stSidebar"] .st-key-v3_nav button {padding-left:.75rem!important}
+[data-testid="stSidebar"] :is(.st-key-v3_nav,.st-key-v3_info) button > div,
+[data-testid="stSidebar"] :is(.st-key-v3_nav,.st-key-v3_info) button [data-testid="stMarkdownContainer"] {justify-content:flex-start!important;text-align:left!important;width:100%}
+[data-testid="stSidebar"] :is(.st-key-v3_nav,.st-key-v3_info) button p {text-align:left!important;width:100%}
+[data-testid="stSidebar"] :is(.st-key-v3_nav,.st-key-v3_info) button {padding-left:.75rem!important}
 /* sembunyikan ikon tautan di samping judul */
 [data-testid="stHeaderActionElements"], [data-testid="stHeadingWithActionElements"] a[href^="#"] {display:none!important}
 
@@ -260,3 +272,6 @@ h1.solyn-auth-heading {font-family:Georgia,"Times New Roman",serif!important;fon
 /* isian indikator Skenario Sendiri dimulai kosong, tombol plus minus bawaan Streamlit tidak dipakai */
 .st-key-solyn_scenario_inputs [data-testid="stNumberInputStepUp"],
 .st-key-solyn_scenario_inputs [data-testid="stNumberInputStepDown"] {display:none}
+
+/* garis pemisah di atas menu Hasil Pengujian dan Tentang */
+[data-testid="stSidebar"] .st-key-v3_info {border-top:1px solid #dad5c9;padding-top:.6rem}
