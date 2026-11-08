@@ -1,9 +1,4 @@
-"""Membuat runtime/baseline_bundle.zip dari data penelitian 2020 sampai 2025.
-
-Jalankan dari folder proyek setelah notebook 01 menghasilkan data/interim/panel_raw.parquet:
-
-    python scripts/build_baseline.py
-"""
+"""Membuat runtime/baseline_bundle.zip dari data penelitian 2020 sampai 2025."""
 import argparse
 from pathlib import Path
 import sys
@@ -32,7 +27,7 @@ def main():
         raw, arguments.published_by, "Ringkasan Saham IDX (data penelitian 2020-2025)"
     )
     arguments.output.parent.mkdir(parents=True, exist_ok=True)
-    # menulis ke file sementara dulu biar file lama aman kalau prosesnya berhenti di tengah
+    # tulis ke file sementara supaya file lama aman kalau proses gagal
     temporary = arguments.output.with_suffix(".tmp")
     temporary.write_bytes(bundle)
     temporary.replace(arguments.output)

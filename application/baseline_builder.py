@@ -1,29 +1,33 @@
-"""Membuat bundle model bawaan aplikasi dari data Ringkasan Saham IDX.
-
-Pengolahan datanya sama dengan notebook 02 dan hyperparameternya hasil validasi 2024
-dari notebook 03 (MODEL_PARAMS). Model akhir dilatih di semua data yang sudah punya
-target, lalu dipakai prediksi return hari bursa berikutnya.
-"""
+"""Membuat bundle model bawaan aplikasi dari data Ringkasan Saham IDX."""
 from datetime import datetime, timezone
 
 import pandas as pd
 
 from application.modeling import (
-    PORTFOLIO_TICKERS,
     build_portfolio_allocation,
     create_baseline_bundle,
     read_baseline_bundle,
     train_baseline_models,
 )
 from feature_pipeline import RAW_COLUMNS, build_feature_panel
-from model_training_metadata import add_training_metadata
-
-# 20 persen data terakhir dipakai buat menghitung metrik test model bawaan
-EVALUATION_RATIO = 0.20
+from notebook_config import tickers as PORTFOLIO_TICKERS
 
 
 def normalize_raw_history(raw):
-    """Memastikan data mentah IDX cuma berisi kolom dan saham yang dipakai."""
+    """Memastikan data mentah IDX cuma berisi kolom dan 11 saham yang dipakai.
+
+    Args:
+        raw: Data mentah Ringkasan Saham IDX. Kolom Remarks boleh tidak ada.
+
+    Returns:
+        Data dengan kolom RAW_COLUMNS saja, tanggal tanpa jam, harga, volume, dan
+        Listed Shares berupa angka, diurutkan per saham dan tanggal.
+
+    Raises:
+        ValueError: Jika kolom wajib tidak ada, ada nilai angka yang tidak
+            terbaca, ada pasangan saham dan tanggal ganda, atau ada tanggal yang
+            tidak memuat lengkap 11 saham.
+    """
     frame = raw.copy()
     if "Remarks" not in frame:
         frame["Remarks"] = "--"
@@ -46,10 +50,15 @@ def normalize_raw_history(raw):
 
 
 def market_history_from_calendar(calendar):
-    """Format riwayat harga yang dibaca halaman aplikasi.
+    """Mengubah kalender harga ke format riwayat harga yang dibaca halaman aplikasi.
 
-    Harga sudah disesuaikan stock split, jadi Remarks diisi "--".
-    Kode Remarks aslinya tetap ada di data mentah IDX.
+    Args:
+        calendar: Kalender harga dari build_feature_panel dengan harga dan volume
+            yang sudah disesuaikan split (open_adj sampai volume_adj).
+
+    Returns:
+        Tabel dengan kolom Date, Ticker, Open, High, Low, Close, Volume, Listed
+        Shares, dan Remarks, diurutkan per saham dan tanggal.
     """
     history = pd.DataFrame({
         "Date": calendar["snapshot_date"],
@@ -66,16 +75,31 @@ def market_history_from_calendar(calendar):
 
 
 def build_baseline_bundle(raw_history, published_by, source):
-    """Hasilnya bytes baseline_bundle.zip plus ringkasan training."""
-    # urutannya: merapikan data IDX, menghitung fitur seperti notebook 02, melatih 11 model,
-    # menghitung portofolio, lalu menyimpan semuanya ke satu file zip
+    """Melatih ulang 11 model dari riwayat IDX dan menyimpannya sebagai baseline_bundle.zip.
+
+    Dipakai di Panel Admin dan scripts/build_baseline.py. Urutannya: rapikan data
+    mentah, bentuk fitur, latih model, siapkan bahan portofolio, lalu simpan ke zip.
+
+    Args:
+        raw_history: Data mentah Ringkasan Saham IDX untuk 11 saham.
+        published_by: Email admin yang menjalankan training.
+        source: Keterangan asal data, disimpan di manifest.
+
+    Returns:
+        Tuple (bundle, info).
+        bundle: Isi baseline_bundle.zip dalam bytes.
+        info: Ringkasan berisi market_data_date, labelled_rows, dan summary
+            prediksi per saham.
+
+    Raises:
+        ValueError: Jika data mentah tidak lolos normalize_raw_history.
+        RuntimeError: Jika isi bundle tidak lengkap 11 saham.
+    """
     raw = normalize_raw_history(raw_history)
     started_at = datetime.now(timezone.utc).isoformat()
-    calendar, all_features, labelled, split_events = build_feature_panel(raw, PORTFOLIO_TICKERS)
+    calendar, all_features, labelled = build_feature_panel(raw, PORTFOLIO_TICKERS)
     features = all_features.rename(columns={"Kode Saham": "Ticker", "snapshot_date": "Date"})
-    result = train_baseline_models(features, PORTFOLIO_TICKERS, EVALUATION_RATIO)
-    if set(result["models"]) != set(PORTFOLIO_TICKERS):
-        raise RuntimeError("Pelatihan belum menghasilkan 11 model lengkap.")
+    result = train_baseline_models(features, PORTFOLIO_TICKERS)
     history = market_history_from_calendar(calendar)
     result["portfolio"] = build_portfolio_allocation(history, result)
     last_date = pd.Timestamp(raw["snapshot_date"].max())
@@ -86,24 +110,39 @@ def build_baseline_bundle(raw_history, published_by, source):
         "training_data_end": last_date.strftime("%Y-%m-%d"),
         "market_history": history,
         "idx_history": raw,
+        "training_started_at": started_at,
+        "training_completed_at": datetime.now(timezone.utc).isoformat(),
     })
-    completed_at = datetime.now(timezone.utc).isoformat()
     bundle = create_baseline_bundle(result, {"email": published_by})
-    bundle = add_training_metadata(bundle, started_at, completed_at)
-    # mengecek terakhir, zip baru harus bisa dibaca dan isinya 11 saham
     _, _, manifest = read_baseline_bundle(bundle, load_models=False)
     if set(manifest.get("tickers", [])) != set(PORTFOLIO_TICKERS):
         raise RuntimeError("Bundle baru belum memuat 11 saham.")
     return bundle, {
         "market_data_date": result["market_data_date"],
         "labelled_rows": int(len(labelled)),
-        "split_events": split_events,
         "summary": result["summary"],
     }
 
 
 def append_idx_rows(existing_raw, uploaded_raw):
-    """Menambahkan tanggal baru dari upload admin ke data mentah IDX."""
+    """Menambahkan tanggal baru dari upload admin ke data mentah IDX.
+
+    Hanya tanggal setelah tanggal terakhir riwayat yang diambil. Tanggal yang
+    sudah ada tidak ditimpa.
+
+    Args:
+        existing_raw: Riwayat IDX yang dipakai model bawaan saat ini.
+        uploaded_raw: Data IDX dari file unggahan admin.
+
+    Returns:
+        Tuple (combined, new_dates).
+        combined: Riwayat lama ditambah baris baru, sudah dirapikan.
+        new_dates: Daftar tanggal baru yang ditambahkan, terurut.
+
+    Raises:
+        ValueError: Jika unggahan tidak memuat tanggal baru, atau salah satu data
+            tidak lolos normalize_raw_history.
+    """
     existing = normalize_raw_history(existing_raw)
     incoming = normalize_raw_history(uploaded_raw)
     last_date = existing["snapshot_date"].max()

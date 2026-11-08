@@ -9,7 +9,6 @@ __pycache__/
 
 data/Ringkasan Saham-*.xlsx
 runtime/backups/
-runtime/preprocessing_audit/
 
 tests/
 pytest.ini

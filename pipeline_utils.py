@@ -1,19 +1,7 @@
-"""Fungsi bersama yang dipakai notebook, aplikasi, dan tes.
-
-- show_table: menampilkan tabel rapi di notebook
-- filter_non_trading_rows: membuang baris yang bukan hari transaksi
-- attach_calendar_targets: menempelkan target return hari bursa berikutnya
-- adjust_prices_for_splits: menyesuaikan harga kalau ada stock split
-- build_exchange_calendar: tanggal keputusan dan tanggal realisasi buat backtest notebook 05
-- calculate_held_weights: bobot portofolio setelah harga bergerak, dipakai notebook 05
-"""
-import logging
-from pathlib import Path
-
+"""Fungsi yang dipakai lebih dari satu tempat."""
 import numpy as np
 import pandas as pd
-
-LOGGER = logging.getLogger(__name__)
+from scipy.optimize import minimize
 
 
 def show_table(frame, *, display_names=None, max_rows=15, row_formats=None):
@@ -42,103 +30,32 @@ def show_table(frame, *, display_names=None, max_rows=15, row_formats=None):
     display(styled)
 
 
-def filter_non_trading_rows(
-    data,
-    *,
-    ticker_col="Ticker",
-    date_col="Date",
-    volume_col="Volume",
-    open_col="Open",
-    high_col="High",
-    low_col="Low",
-    close_col="Close",
-    check_flat_price=True,
-    audit_dir=None,
-    logger=None,
-):
-    """Return data bersih, baris dihapus, anomali, dan ringkasan per ticker.
-
-    Volume nol dengan Open, High, Low nol dan Close tetap juga dihapus.
-    Volume nol dengan pola harga lain tetap disimpan sebagai anomali.
-    Pengecekan flat-price tambahan memakai Close sebelumnya per ticker.
-    audit_dir menyimpan removed_rows.csv, anomalies.csv, dan summary.csv.
-    Data masukan tidak diubah dan tanggal yang dihapus tidak diisi kembali.
-    """
-    audit_logger = LOGGER if logger is None else logger
-    key_columns = [ticker_col, date_col]
-    price_columns = [open_col, high_col, low_col, close_col]
-    required_columns = [*key_columns, *price_columns, volume_col]
-    missing_columns = sorted(set(required_columns) - set(data.columns))
-    if missing_columns:
-        raise ValueError(f"Kolom OHLCV tidak lengkap: {missing_columns}")
-
-    frame = data.copy()
-    frame[date_col] = pd.to_datetime(frame[date_col], errors="raise")
-    if frame[key_columns].isna().any().any():
-        raise ValueError("Ticker atau tanggal kosong")
-    if frame.duplicated(key_columns).any():
-        raise ValueError("Data OHLCV memuat ticker dan tanggal duplikat")
-    numeric_columns = [*price_columns, volume_col]
-    for column in numeric_columns:
-        frame[column] = pd.to_numeric(frame[column], errors="raise")
-    if frame[numeric_columns].isna().any().any():
-        raise ValueError("Harga atau volume kosong perlu diperiksa sebelum preprocessing")
-    if (frame[volume_col] < 0).any():
-        raise ValueError("Volume negatif perlu diperiksa sebelum preprocessing")
-    frame = frame.sort_values(key_columns, kind="stable").reset_index(drop=True)
-
-    # membandingkan ohlc dan close sebelumnya pada ticker yang sama
-    previous_close = frame.groupby(ticker_col, sort=False)[close_col].shift(1)
-    flat_ohlc = frame[price_columns].eq(frame[close_col], axis=0).all(axis=1)
-    zero_volume = frame[volume_col].eq(0)
-    zero_ohl_unchanged_close = (
-        zero_volume
-        & frame[[open_col, high_col, low_col]].eq(0).all(axis=1)
-        & frame[close_col].eq(previous_close)
-    )
-    anomaly_mask = zero_volume & ~flat_ohlc & ~zero_ohl_unchanged_close
-    flat_previous_close = flat_ohlc & frame[close_col].eq(previous_close)
-    removal_mask = (zero_volume & flat_ohlc) | zero_ohl_unchanged_close
-    if check_flat_price:
-        removal_mask = removal_mask | flat_previous_close
-    removal_mask = removal_mask & ~anomaly_mask
-
-    removed = frame.loc[removal_mask, key_columns].copy().reset_index(drop=True)
-    anomalies = frame.loc[anomaly_mask, required_columns].copy().reset_index(drop=True)
-    cleaned = frame.loc[~removal_mask].copy().reset_index(drop=True)
-    summary = frame.groupby(ticker_col, sort=False).size().to_frame("Input Rows")
-    summary["Removed"] = removed.groupby(ticker_col).size().reindex(summary.index, fill_value=0)
-    summary["Anomalies"] = anomalies.groupby(ticker_col).size().reindex(summary.index, fill_value=0)
-    summary["Retained"] = summary["Input Rows"] - summary["Removed"]
-    summary = summary.reset_index().rename(columns={ticker_col: "Ticker"})
-    totals = {column: int(summary[column].sum()) for column in summary.columns if column != "Ticker"}
-    summary = pd.concat([summary, pd.DataFrame([{"Ticker": "Total", **totals}])], ignore_index=True)
-
-    # memvalidasi kunci dan urutan setelah penghapusan
-    if cleaned.duplicated(key_columns).any():
-        raise ValueError("Hasil preprocessing memuat ticker dan tanggal duplikat")
-    if not cleaned[key_columns].equals(cleaned.sort_values(key_columns)[key_columns]):
-        raise ValueError("Hasil preprocessing belum terurut")
-
-    audit_logger.info("Ringkasan preprocessing OHLCV\n%s", summary.to_string(index=False))
-    if not anomalies.empty:
-        log_anomalies = anomalies.copy()
-        log_anomalies[date_col] = log_anomalies[date_col].dt.strftime("%Y-%m-%d")
-        audit_logger.warning("Volume nol dengan OHLC tidak flat. Baris dipertahankan\n%s", log_anomalies.to_string(index=False))
-    if audit_dir is not None:
-        audit_path = Path(audit_dir)
-        audit_path.mkdir(parents=True, exist_ok=True)
-        removed.to_csv(audit_path / "removed_rows.csv", index=False, date_format="%Y-%m-%d")
-        anomalies.to_csv(audit_path / "anomalies.csv", index=False, date_format="%Y-%m-%d")
-        summary.to_csv(audit_path / "summary.csv", index=False)
-    return cleaned, removed, anomalies, summary
-
-
 def attach_calendar_targets(indicators, calendar, *, ticker_col="Kode Saham", date_col="snapshot_date", close_col="close_adj", return_col=None):
-    """Memasangkan indikator dengan target hari bursa berikutnya dari kalender harga.
+    """Memasangkan setiap baris indikator dengan target return hari bursa berikutnya.
 
-    target_next_return di tanggal t itu return dari t ke hari bursa berikutnya (t+1).
-    Jadi model pakai indikator hari ini buat menebak return besok.
+    Target diambil dari kalender harga, bukan dari tabel indikator, supaya hari
+    bursa berikutnya tetap benar walaupun ada baris yang dibuang dari tabel indikator.
+
+    Args:
+        indicators: Tabel indikator dengan kolom ticker_col dan date_col. Kolom
+            target_date dan target_next_return yang sudah ada akan diganti.
+        calendar: Tabel harga lengkap per saham dan tanggal.
+        ticker_col: Nama kolom kode saham.
+        date_col: Nama kolom tanggal observasi.
+        close_col: Nama kolom harga penutupan.
+        return_col: Nama kolom return yang sudah ada di kalender. Jika None,
+            return dihitung dari close_col, yaitu close(t+1) / close(t) - 1.
+
+    Returns:
+        Salinan indicators ditambah kolom target_date (tanggal hari bursa
+        berikutnya) dan target_next_return (simple return pada tanggal itu, dalam
+        desimal), diurutkan per saham dan tanggal. Baris terakhir tiap saham
+        bernilai kosong karena belum punya hari bursa berikutnya.
+
+    Raises:
+        ValueError: Jika kalender memuat pasangan saham dan tanggal ganda, ada
+            close yang kosong atau tidak positif, atau indicators memuat
+            pasangan saham dan tanggal ganda.
     """
     columns = [ticker_col, date_col, close_col]
     if return_col is not None:
@@ -162,98 +79,130 @@ def attach_calendar_targets(indicators, calendar, *, ticker_col="Kode Saham", da
     return frame.merge(targets, on=[ticker_col, date_col], how="left", validate="one_to_one").sort_values([ticker_col, date_col]).reset_index(drop=True)
 
 
-def adjust_prices_for_splits(
-    panel,
-    *,
-    ticker_col="Kode Saham",
-    date_col="snapshot_date",
-    listed_shares_col="Listed Shares",
-    price_columns=None,
-    volume_col="Volume",
-):
-    """Menyesuaikan harga dan volume ke belakang pakai rasio Listed Shares.
+SPLIT_PRICE_COLUMNS = {
+    "Open Price": "open_adj",
+    "Tertinggi": "high_adj",
+    "Terendah": "low_adj",
+    "Penutupan": "close_adj",
+}
 
-    Stock split ketahuan kalau jumlah saham beredar berubah dengan rasio bulat, misalnya jadi
-    5 kali lipat. Harga sebelum tanggal split dibagi rasio itu dan volumenya dikali, jadi grafik
-    harga tidak kelihatan anjlok palsu di tanggal split.
+
+def adjust_prices_for_splits(panel):
+    """Menyesuaikan harga dan volume ke belakang berdasarkan perubahan Listed Shares.
+
+    Stock split terdeteksi jika Listed Shares naik menjadi kelipatan bulat,
+    minimal 2 kali dari hari sebelumnya. Reverse stock split terdeteksi jika
+    Listed Shares turun menjadi 1/2, 1/3, dan seterusnya. Harga sebelum tanggal
+    split dibagi rasio tersebut dan volume dikali rasio tersebut, sehingga
+    return tidak melonjak palsu pada tanggal split.
+
+    Args:
+        panel: Data mentah IDX dengan kolom Kode Saham, snapshot_date, Listed
+            Shares, Volume, Open Price, Tertinggi, Terendah, dan Penutupan.
+
+    Returns:
+        Tuple (prices, split_rows).
+        prices: Salinan panel yang diurutkan per saham dan tanggal, ditambah
+            kolom open_adj, high_adj, low_adj, close_adj, volume_adj, faktor
+            penyesuaian, dan simple_return dari close_adj. Return hari pertama
+            tiap saham kosong.
+        split_rows: Daftar kejadian split berisi Kode Saham, snapshot_date,
+            dan listed_shares_ratio.
     """
-    if price_columns is None:
-        price_columns = {
-            "Open Price": "open_adj",
-            "Tertinggi": "high_adj",
-            "Terendah": "low_adj",
-            "Penutupan": "close_adj",
-        }
-    required = {
-        ticker_col,
-        date_col,
-        listed_shares_col,
-        volume_col,
-        *price_columns.keys(),
-    }
-    missing = required.difference(panel.columns)
-    if missing:
-        raise ValueError(f"Kolom untuk penyesuaian split belum lengkap: {sorted(missing)}")
+    prices = panel.sort_values(["Kode Saham", "snapshot_date"], kind="stable").copy()
 
-    prices = panel.sort_values([ticker_col, date_col], kind="stable").copy()
-    if prices.duplicated([ticker_col, date_col]).any():
-        raise ValueError("Ada ticker dan tanggal duplikat pada data harga")
-
-    previous_shares = prices.groupby(ticker_col)[listed_shares_col].shift()
-    prices["listed_shares_ratio"] = prices[listed_shares_col] / previous_shares
+    previous_shares = prices.groupby("Kode Saham")["Listed Shares"].shift()
+    prices["listed_shares_ratio"] = prices["Listed Shares"] / previous_shares
     ratio = prices["listed_shares_ratio"]
-    # split biasa kalau rasionya bulat dan minimal 2, reverse split kalau rasionya 0,5 ke bawah
-    split_up = ratio.ge(2) & np.isclose(ratio, np.round(ratio), rtol=0, atol=1e-8)
-    split_reverse = (
+    stock_split = (
+        ratio.ge(2) 
+        & np.isclose(ratio, np.round(ratio), rtol=0, atol=1e-8)
+    )
+    reverse_stock_split = (
         ratio.gt(0)
         & ratio.le(0.5)
         & np.isclose(1 / ratio, np.round(1 / ratio), rtol=0, atol=1e-8)
     )
     split_rows = prices.loc[
-        split_up | split_reverse, [ticker_col, date_col, "listed_shares_ratio"]
+        stock_split | reverse_stock_split, ["Kode Saham", "snapshot_date", "listed_shares_ratio"]
     ].copy()
 
     prices["price_adj_factor"] = 1.0
     prices["volume_adj_factor"] = 1.0
-    # tiap split mengoreksi semua tanggal sebelum split di saham itu
     for event in split_rows.itertuples(index=False, name=None):
         ticker, split_date, share_ratio = event
-        before_split = prices[ticker_col].eq(ticker) & prices[date_col].lt(split_date)
+        before_split = prices["Kode Saham"].eq(ticker) & prices["snapshot_date"].lt(split_date)
         prices.loc[before_split, "price_adj_factor"] *= 1 / share_ratio
         prices.loc[before_split, "volume_adj_factor"] *= share_ratio
 
-    for source_column, adjusted_column in price_columns.items():
+    for source_column, adjusted_column in SPLIT_PRICE_COLUMNS.items():
         prices[adjusted_column] = prices[source_column] * prices["price_adj_factor"]
-    prices["volume_adj"] = prices[volume_col] * prices["volume_adj_factor"]
-    prices["simple_return"] = prices.groupby(ticker_col)["close_adj"].pct_change(
+    prices["volume_adj"] = prices["Volume"] * prices["volume_adj_factor"]
+    prices["simple_return"] = prices.groupby("Kode Saham")["close_adj"].pct_change(
         fill_method=None
     )
-    split_rows = split_rows.rename(
-        columns={ticker_col: "Kode Saham", date_col: "snapshot_date"}
-    ).reset_index(drop=True)
-    return prices, split_rows
+    return prices, split_rows.reset_index(drop=True)
 
 
-def build_exchange_calendar(return_panel, *, start_date, end_date):
-    """Mempertahankan seluruh tanggal keputusan yang memiliki hari bursa berikutnya."""
-    dates = pd.DatetimeIndex(return_panel.index).sort_values()
-    if dates.has_duplicates:
-        raise ValueError("Kalender bursa memuat tanggal duplikat")
-    targets = pd.Series(dates, index=dates).shift(-1)
-    mask = (dates >= pd.Timestamp(start_date)) & (dates <= pd.Timestamp(end_date)) & targets.notna().to_numpy()
-    decisions = dates[mask]
-    return decisions, targets.loc[decisions]
+def optimize_max_sharpe(expected_returns, covariance, risk_free_daily, max_weight=0.20):
+    """Mencari bobot portofolio dengan Sharpe Ratio ex-ante tertinggi menggunakan SLSQP.
 
+    Optimasi dimulai dari bobot sama rata 1/n, dengan total bobot 100% dan tanpa
+    short selling.
 
-def calculate_held_weights(previous_weights, realized_returns):
-    """Menghitung bobot setelah perubahan harga dengan jumlah saham tetap."""
-    weights = np.asarray(previous_weights, dtype=float)
-    returns = np.asarray(realized_returns, dtype=float)
-    if weights.shape != returns.shape or not np.isfinite(weights).all() or not np.isfinite(returns).all():
-        raise ValueError("Bobot atau return posisi tidak valid")
-    if (weights < -1e-12).any() or not np.isclose(weights.sum(), 1.0):
-        raise ValueError("Jumlah bobot posisi harus satu")
-    values = weights * (1 + returns)
-    if (values < 0).any() or values.sum() <= 0:
-        raise ValueError("Nilai posisi sesudah perubahan harga tidak valid")
-    return values / values.sum()
+    Args:
+        expected_returns: Expected return harian tiap saham dalam desimal
+            (0.01 = 1%), urutannya sama dengan baris dan kolom covariance.
+        covariance: Matriks kovarians return harian berukuran n x n.
+        risk_free_daily: Risk-free rate harian dalam desimal, yaitu BI Rate
+            tahunan dibagi 252.
+        max_weight: Batas bobot maksimum tiap saham dalam desimal (0.20 = 20%).
+
+    Returns:
+        Array bobot sepanjang n dengan total 1 dan tiap bobot 0 sampai max_weight.
+
+    Raises:
+        ValueError: Jika n x max_weight kurang dari 1, sehingga total 100% tidak
+            mungkin tercapai.
+        RuntimeError: Jika SLSQP gagal atau bobot hasilnya melanggar batas.
+    """
+    expected_returns = np.asarray(expected_returns, dtype=float)
+    covariance = np.asarray(covariance, dtype=float)
+    n_assets = len(expected_returns)
+
+    # Cek total saham harus 100% jumlahnya, di bawah itu bobot gakbisa dialokasikan maksimal.
+    if n_assets * max_weight < 1.0 - 1e-12:
+        raise ValueError('Batas maksimum weight tidak memungkinkan total weight 100%')
+
+    def calculate_negative_sharpe(weights):
+        portfolio_return = weights @ expected_returns
+        portfolio_variance = weights @ covariance @ weights
+        # penalti kalau variance hampir nol
+        if portfolio_variance <= 1e-16:
+            return 1e6
+        return -((portfolio_return - risk_free_daily) / np.sqrt(portfolio_variance))
+
+    result = minimize(
+        calculate_negative_sharpe,
+        np.full(n_assets, 1.0 / n_assets),
+        method="SLSQP",
+        bounds=[(0.0, max_weight)] * n_assets,
+        constraints=[{"type": "eq", "fun": lambda weights: weights.sum() - 1.0}],
+        options={"maxiter": 1000, "ftol": 1e-9},
+    )
+    if not result.success or not np.isfinite(result.x).all():
+        raise RuntimeError(f"Optimization gagal: {result.message}")
+    candidate = np.clip(result.x, 0.0, max_weight)
+    residual = 1.0 - candidate.sum()
+    if abs(residual) > 1e-6:
+        raise RuntimeError(f"Optimization menghasilkan weight yang tidak memenuhi batas: {result.message}")
+    # Menghitung selisih antara total bobot aktual dengan 100%
+    for index in range(n_assets):
+        if abs(residual) <= 1e-12:
+            break
+        adjustment = min(residual, max_weight - candidate[index]) if residual > 0 else max(residual, -candidate[index])
+        candidate[index] += adjustment
+        residual -= adjustment
+    if abs(candidate.sum() - 1.0) > 1e-9 or candidate.max() > max_weight + 1e-12:
+        raise RuntimeError('Perbaikan weight tidak memenuhi batas portfolio')
+    return candidate

@@ -49,10 +49,6 @@ button:focus-visible,input:focus-visible {outline:3px solid #1D4ED8!important;ou
 .solyn-schedule {font-size:.82rem;line-height:1.55;color:#475569}
 .solyn-schedule strong {display:inline-block;margin-top:.2rem;font-weight:650;color:#162235}
 .solyn-data-note {font-size:.82rem;line-height:1.55;color:#475569;margin-top:.7rem}
-.solyn-account {display:flex;align-items:center;gap:.6rem;padding:.4rem .4rem 0}
-.solyn-avatar {background:#D9E5F4;color:#475569;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:.82rem;font-weight:650;flex-shrink:0}
-.solyn-account-name {font-size:.85rem;font-weight:600;line-height:1.3}
-.solyn-account-note {font-size:.65rem;color:#475569;margin-top:.18rem}
 [data-testid="stSidebar"] [data-testid="stCaptionContainer"], [data-testid="stSidebar"] [data-testid="stCaptionContainer"] p {font-size:.7rem!important}
 .st-key-solyn_page_focus, .st-key-solyn_page_lang, .st-key-solyn_scroll_card {display:none}
 /* teks kode (misalnya nama file contoh) dibuat lebih gelap supaya kontrasnya memenuhi WCAG AA */
@@ -77,12 +73,12 @@ button:focus-visible,input:focus-visible {outline:3px solid #1D4ED8!important;ou
 .solyn-hint:hover::after, .solyn-hint:focus-visible::after {opacity:1;visibility:visible}
 /* ikon di sisi kanan halaman memunculkan kotaknya ke arah kiri supaya tidak terpotong */
 .solyn-hint-right::after {left:auto;right:0}
-/* tablet: kartu Hasil Pengujian jadi dua kolom, jadi cuma kartu kolom kanan yang membuka ke kiri */
+/* tablet: kartu kolom kanan membuka ke kiri */
 @media (max-width: 900px) {
   .solyn-compare-card .solyn-hint-right::after {left:0;right:auto}
   .solyn-compare-card:nth-child(even) .solyn-hint::after {left:auto;right:0}
 }
-/* HP: semua kotak membuka ke kanan dari awal baris label, lebarnya mengikuti layar supaya tidak terpotong */
+/* HP: semua tooltip membuka ke kanan */
 @media (max-width: 640px) {
   .solyn-hint {position:static}
   :has(> .solyn-hint) {position:relative}
@@ -109,12 +105,6 @@ button:focus-visible,input:focus-visible {outline:3px solid #1D4ED8!important;ou
 .solyn-table td small {display:block;font-size:.92rem;color:#475569;margin-top:.17rem}
 .solyn-table td strong {font-weight:650;color:#475569}
 .solyn-up {color:var(--solyn-green)} .solyn-down {color:var(--solyn-red)}
-.solyn-spark {width:94px;height:28px;vertical-align:middle}
-.solyn-note {font-size:.76rem;color:#475569;line-height:1.6;margin-top:.65rem}
-.solyn-workflow {display:grid;grid-template-columns:repeat(3,1fr);gap:1.2rem;margin:1rem 0 1.1rem;padding-top:1rem;border-top:1px solid var(--solyn-line)}
-.solyn-workflow p {font-size:.76rem!important;line-height:1.6!important;color:#475569;margin:.3rem 0}
-.solyn-workflow b {font-size:.79rem;font-weight:600;color:#475569}
-.solyn-workflow small {color:#153E75;margin-right:.4rem;font-size:.65rem}
 .v3-result {border:1px solid #d7d0c0;border-radius:14px;padding:1.7rem 1.8rem;background:#FFFFFF;margin:.4rem 0 .5rem;box-shadow:0 4px 12px #3d331204}
 .v3-result small {display:block;font-size:.82rem;color:#475569;margin-top:.55rem;letter-spacing:.02em;line-height:1.6}
 .v3-result strong {font-family:Georgia,serif;font-size:2.4rem;font-weight:400;letter-spacing:-.03em;line-height:1.2}
@@ -125,8 +115,8 @@ button:focus-visible,input:focus-visible {outline:3px solid #1D4ED8!important;ou
 [data-testid="stMetricLabel"] p {white-space:normal!important;overflow:visible!important;text-overflow:clip!important;line-height:1.4;min-height:2.8em}
 [data-testid="stExpander"] {border-color:#ded8ca!important;border-radius:10px!important;background:#FFFFFF}
 [data-testid="stAlert"] {border-radius:10px;font-size:.88rem}
-/* semua pesan (st.info, st.success, st.warning, st.error) dibuat kotak putih dengan garis kiri berwarna,
-   jadi tidak ada lagi latar kuning atau biru dan teksnya tetap gelap supaya mudah dibaca */
+/* semua pesan (st.info, st.success, st.warning, st.error) berupa kotak putih dengan garis kiri berwarna,
+   teksnya gelap supaya mudah dibaca */
 [data-testid="stAlertContainer"] {background:#FFFFFF!important;border:1px solid #CBD5E1;border-left:5px solid #153E75;border-radius:10px}
 [data-testid="stAlertContainer"]:has([data-testid="stAlertContentSuccess"]) {border-left-color:#176342}
 [data-testid="stAlertContainer"]:has([data-testid="stAlertContentWarning"]) {border-left-color:#B45309}
@@ -135,12 +125,12 @@ button:focus-visible,input:focus-visible {outline:3px solid #1D4ED8!important;ou
 [data-testid="stAlertContainer"] p, [data-testid="stAlertContainer"] li {color:#334155!important}
 [data-testid="stAlertContainer"] strong {color:#162235!important}
 .solyn-nfa {display:flex;align-items:flex-start;gap:1rem;border-top:1px solid var(--solyn-line);margin-top:2.5rem;padding-top:1.1rem;color:#475569;font-size:.9rem;line-height:1.65}
-/* masukan dosen: judul NFA merah, kalimat sesudahnya biru tua supaya menonjol (kontras keduanya di atas 4.5:1) */
+/* judul NFA merah, kalimat sesudahnya biru tua supaya menonjol (kontras keduanya di atas 4.5:1) */
 .solyn-nfa span {color:#153E75}
 .solyn-nfa span b {color:#A4262C}
 @media(min-width:1400px) {.block-container {padding-top:3rem}}
 @media(max-width:1100px) {.block-container {padding-left:2rem;padding-right:2rem}h1 {font-size:2.25rem!important}}
-@media(max-width:640px) {.solyn-indicators {grid-template-columns:1fr}.block-container {padding:3rem 1.1rem 1.6rem}h1 {font-size:2rem!important}.v3-intro {font-size:.95rem!important}.solyn-topline {font-size:.59rem}.solyn-workflow {grid-template-columns:1fr;gap:.65rem}.solyn-section-head {align-items:flex-start}.solyn-table th,.solyn-table td {padding:.65rem .75rem}.solyn-nfa {gap:.7rem}}
+@media(max-width:640px) {.solyn-indicators {grid-template-columns:1fr}.block-container {padding:3rem 1.1rem 1.6rem}h1 {font-size:2rem!important}.v3-intro {font-size:.95rem!important}.solyn-topline {font-size:.59rem}.solyn-section-head {align-items:flex-start}.solyn-table th,.solyn-table td {padding:.65rem .75rem}.solyn-nfa {gap:.7rem}}
 
 /* WCAG AA color targets: text >= 4.5:1, control boundaries and focus >= 3:1. */
 div.stButton>button, div.stDownloadButton>button {border-color:#718096}
@@ -185,25 +175,12 @@ div.stButton>button, div.stDownloadButton>button {border-color:#718096}
  .st-key-solyn_home_actions [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {width:100%!important;flex:1 1 auto!important}
 }
 
-/* popup masuk dan mode percobaan */
-.solyn-login-or { text-align: center; color: #5B6B82; font-size: 0.9rem; margin: 0.35rem 0; }
+/* timer coba gratis */
 .solyn-trial-timer {
     border: 1px solid #C9D6EA; background: #EEF3FA; color: #162235;
     border-radius: 0.6rem; padding: 0.45rem 0.7rem; margin-bottom: 0.4rem; font-size: 0.92rem;
 }
 .solyn-trial-timer strong { font-variant-numeric: tabular-nums; }
-
-/* tombol Masuk dengan Google: putih dengan logo Google */
-[class*="_google_wrap"] button {
-    background: #FFFFFF !important; color: #1F1F1F !important; border: 1px solid #747775 !important;
-}
-[class*="_google_wrap"] button:hover { background: #F2F5F9 !important; }
-div[class*="_google_wrap"] button[data-testid] [data-testid="stMarkdownContainer"] p,
-div[class*="_google_wrap"] button[data-testid] span { color: #1F1F1F !important; font-weight: 500; }
-[class*="_google_wrap"] button p::before {
-    content: ""; display: inline-block; width: 1.15em; height: 1.15em; margin-right: 0.6em;
-    vertical-align: -0.2em; background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path fill="%23FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="%23FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="%234CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="%231976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>') no-repeat center / contain;
-}
 
 /* menu samping rata kiri */
 [data-testid="stSidebar"] :is(.st-key-v3_nav,.st-key-v3_info) button > div,
@@ -273,5 +250,5 @@ h1.solyn-auth-heading {font-family:Georgia,"Times New Roman",serif!important;fon
 .st-key-solyn_scenario_inputs [data-testid="stNumberInputStepUp"],
 .st-key-solyn_scenario_inputs [data-testid="stNumberInputStepDown"] {display:none}
 
-/* garis pemisah di atas menu Hasil Pengujian dan Tentang */
+/* garis di atas menu bagian bawah */
 [data-testid="stSidebar"] .st-key-v3_info {border-top:1px solid #dad5c9;padding-top:.6rem}

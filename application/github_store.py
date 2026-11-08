@@ -1,9 +1,4 @@
-"""Menyimpan bundle model bawaan ke repo GitHub lewat GitHub REST API.
-
-Streamlit Community Cloud tidak menyimpan perubahan file secara permanen.
-Jadi setelah admin update model, bundle baru di-commit ke repo dan
-Streamlit Cloud reload aplikasi pakai model itu.
-"""
+"""Menyimpan bundle model bawaan ke repo GitHub lewat GitHub REST API."""
 import base64
 
 import requests
@@ -14,7 +9,7 @@ DEFAULT_BRANCH = "main"
 
 
 class GitHubStoreError(RuntimeError):
-    """Error waktu menyimpan ke GitHub, pesannya sudah bahasa Indonesia buat ditampilkan ke admin."""
+    """Error waktu menyimpan ke GitHub."""
     pass
 
 
@@ -41,10 +36,10 @@ def _headers(token):
 
 
 def _explain(response):
-    """Mengubah kode status HTTP dari GitHub jadi pesan yang gampang dipahami admin."""
+    """Interpretasi response error"""
     messages = {
         401: "Token GitHub tidak valid atau sudah kedaluwarsa.",
-        403: "Token GitHub belum memiliki izin Contents: Read and write untuk repositori ini.",
+        403: "Token GitHub belum memiliki izin operasi Read and write untuk repositori ini.",
         404: "Repositori, branch, atau path GitHub tidak ditemukan. Periksa pengaturan [github] di Secrets.",
         409: "Berkas di GitHub berubah saat penyimpanan. Coba simpan kembali.",
         422: "GitHub menolak isi commit. Periksa nama branch dan path berkas.",
@@ -53,11 +48,7 @@ def _explain(response):
 
 
 def publish_bundle(content, message, settings, session=None):
-    """Commit bundle ke GitHub dan mengembalikan link commit-nya.
-
-    Pertama mengambil "sha" file lama kalau sudah ada, ini wajib buat menimpa file.
-    Habis itu mengirim isi file baru dalam base64 pakai PUT.
-    """
+    """Commit bundle ke GitHub dan mengembalikan link commit-nya."""
     if not github_is_configured(settings):
         raise GitHubStoreError("Penyimpanan GitHub belum dikonfigurasi.")
     http = session or requests

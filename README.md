@@ -26,7 +26,7 @@ Alamat aplikasi: [Solyn](https://solynapp.streamlit.app)
 | Login | Halaman pertama yang dilihat pengguna. Isi aplikasi baru dapat dibuka setelah masuk dengan akun Google |
 | Persetujuan akses | Muncul untuk akun yang belum disetujui admin setelah masa coba gratis 5 menit berakhir. Pengguna dapat mengajukan akses atau keluar |
 | Home | Ringkasan harga terakhir, prediksi return hari bursa berikutnya, dan grafik harga |
-| Analisis Saham | Prediksi return satu saham beserta indikator yang paling memengaruhi hasilnya |
+| Prediksi Saham | Prediksi return satu saham beserta indikator yang paling memengaruhi hasilnya |
 | Simulasi Portofolio | Pembagian dana ke beberapa saham dengan Sharpe Ratio tertinggi |
 | Hasil Pengujian | Evaluasi model dan portofolio pada data tahun 2025 |
 | Unggah Data | Melatih model sementara dari file Ringkasan Saham IDX terbaru milik pengguna |

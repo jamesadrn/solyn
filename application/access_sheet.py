@@ -1,12 +1,4 @@
-"""Baca dan tulis Google Sheet daftar pengguna: izin akses dan coba gratis.
-
-Satu sheet dipakai untuk dua hal:
-- kolom Status untuk izin dari admin (Pending, Approved, Rejected)
-- kolom Percobaan Gratis untuk waktu mulai coba gratis, jadi satu email cuma bisa coba sekali
-- kolom Role untuk peran akun, User atau Admin. Admin bisa memberikan role Admin ke akun lain
-
-Fungsi di sini cuma butuh objek worksheet dari gspread, jadi gampang dites pakai worksheet palsu.
-"""
+"""Baca dan tulis Google Sheet daftar pengguna: izin akses dan coba gratis."""
 from datetime import datetime, timedelta
 
 BASE_HEADERS = ["Email", "Nama", "Tanggal Daftar", "Status", "Tanggal Persetujuan"]
@@ -20,7 +12,7 @@ ROLE_CELL = "G"
 
 
 def ensure_headers(worksheet):
-    """Pastikan baris judul sesuai. Sheet lama yang belum punya kolom Percobaan Gratis atau Role ditambah otomatis."""
+    """Pastikan baris judul sesuai. Kolom Percobaan Gratis atau Role ditambahkan otomatis kalau sheet belum punya."""
     header = [str(cell).strip() for cell in worksheet.row_values(1)]
     if not header:
         worksheet.append_row(APPROVAL_HEADERS, value_input_option="RAW")
@@ -75,16 +67,12 @@ def trial_window(record, minutes):
 
 
 def claim_trial(worksheet, email, name, now):
-    """Mencatat mulai coba gratis untuk satu email, cuma boleh sekali.
-
-    Hasilnya "started" kalau berhasil, "used" kalau email ini sudah pernah coba,
-    atau "rejected" kalau aksesnya sudah ditolak admin.
-    """
+    """Mencatat mulai coba gratis untuk satu email, cuma boleh sekali."""
     records = clean_records(worksheet)
     index, record = find_row(records, email)
     stamp = now.isoformat(timespec="seconds")
     if record is None:
-        # akun baru: baris dibuat dengan Status kosong (belum mengajukan akses)
+        # akun baru: Status kosong sampai mengajukan akses
         worksheet.append_row([email, name, stamp, "", "", stamp, "User"], value_input_option="RAW")
         return "started"
     if record.get(TRIAL_COLUMN):
@@ -102,18 +90,12 @@ def request_access(worksheet, email, name, now):
     if record is None:
         worksheet.append_row([email, name, now.isoformat(timespec="seconds"), "Pending", "", "", "User"],
                              value_input_option="RAW")
-        return {"Email": email, "Status": "Pending"}
-    if not record.get("Status"):
+    elif not record.get("Status"):
         worksheet.update([["Pending"]], range_name=f"{STATUS_CELL}{index + 2}", value_input_option="RAW")
-        record["Status"] = "Pending"
-    return record
 
 
 def set_role(worksheet, email, role, now):
-    """Mengubah role satu akun. Role Admin sekaligus menyetujui akses akun tersebut.
-
-    Hasilnya semua baris sheet setelah diubah, dipakai untuk memperbarui tabel di Panel Admin.
-    """
+    """Mengubah role satu akun. Role Admin sekaligus menyetujui akses akun tersebut."""
     if role not in ROLES:
         raise ValueError("Role tidak valid.")
     records = clean_records(worksheet)
@@ -124,10 +106,7 @@ def set_role(worksheet, email, role, now):
     if role == "Admin" and record.get("Status", "").lower() != "approved":
         stamp = now.isoformat(timespec="seconds")
         worksheet.update([["Approved", stamp]], range_name=f"{STATUS_CELL}{row}:E{row}", value_input_option="RAW")
-        record["Status"], record["Tanggal Persetujuan"] = "Approved", stamp
     worksheet.update([[role]], range_name=f"{ROLE_CELL}{row}", value_input_option="RAW")
-    record[ROLE_COLUMN] = role
-    return records
 
 
 def add_user(worksheet, email, name, role, now):
@@ -140,4 +119,3 @@ def add_user(worksheet, email, name, role, now):
         raise ValueError("Email ini sudah terdaftar. Ubah role atau status akunnya dari tabel pengguna.")
     stamp = now.isoformat(timespec="seconds")
     worksheet.append_row([email, name, stamp, "Approved", stamp, "", role], value_input_option="RAW")
-    return clean_records(worksheet)

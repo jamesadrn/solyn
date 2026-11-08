@@ -8,8 +8,7 @@ import importlib.util
 
 import pandas as pd
 
-# python-calamine membaca Excel sekitar 6 kali lebih cepat dari openpyxl dengan hasil yang sama
-# (sudah dicek pada 242 file IDX 2020 sampai 2025). Kalau belum terpasang, pandas memakai openpyxl.
+# python-calamine lebih cepat, openpyxl dipakai kalau belum terpasang
 EXCEL_ENGINE = "calamine" if importlib.util.find_spec("python_calamine") else None
 
 # tambahan " (1)", " (2)" dari browser saat file terunduh dua kali tetap diterima
@@ -20,8 +19,7 @@ class UploadValidationError(ValueError):
     """Pesan error upload yang aman ditampilkan langsung ke pengguna."""
 
 
-# nama bulan Indonesia atau Inggris, singkat atau lengkap, diubah jadi nomor bulan
-# file IDX menyingkat Agustus menjadi "Agt", misalnya "31 Agt 2026"
+# nama bulan Indonesia atau Inggris jadi nomor bulan, termasuk "Agt" dari file IDX
 IDX_MONTHS = {
     "jan": "01", "januari": "01", "feb": "02", "februari": "02",
     "mar": "03", "maret": "03", "apr": "04", "april": "04",
@@ -34,7 +32,16 @@ IDX_MONTHS = {
 
 
 def parse_idx_trade_dates(values):
-    """Membaca tanggal bahasa Indonesia dari file IDX, misalnya "02 Jan 2026" atau "02 Januari 2026"."""
+    """Membaca tanggal bahasa Indonesia dari file IDX, misalnya "02 Jan 2026" atau "02 Januari 2026".
+
+    Nama bulan Indonesia atau Inggris diganti menjadi nomor bulan sebelum dibaca.
+
+    Args:
+        values: Series berisi tanggal dalam bentuk teks atau datetime.
+
+    Returns:
+        Series datetime. Nilai yang tidak terbaca menjadi NaT.
+    """
     month_pattern = re.compile(r"\b(" + "|".join(sorted(IDX_MONTHS, key=len, reverse=True)) + r")\b", re.IGNORECASE)
 
     def normalize(value):
@@ -46,9 +53,18 @@ def parse_idx_trade_dates(values):
 
 
 def filename_date(filename, today=None):
-    """Tanggal dari nama file IDX, misalnya Ringkasan Saham-20260102.xlsx menjadi 2 Januari 2026.
+    """Membaca tanggal dari nama file IDX, misalnya Ringkasan Saham-20260102.xlsx menjadi 2 Januari 2026.
 
-    Dicek sebelum isi Excel dibuka, jadi nama file yang salah langsung ketahuan tanpa membaca isinya.
+    Args:
+        filename: Nama file yang diunggah. Tambahan " (1)" dari browser tetap diterima.
+        today: Batas tanggal paling akhir. Jika None, memakai tanggal hari ini di WIB.
+
+    Returns:
+        Tanggal pada nama file sebagai pd.Timestamp.
+
+    Raises:
+        UploadValidationError: Jika format nama file salah, tanggalnya tidak
+            valid, atau melewati hari ini.
     """
     date_match = FILENAME_PATTERN.fullmatch(filename)
     if not date_match:
@@ -66,11 +82,26 @@ def filename_date(filename, today=None):
 
 
 def validate_market_upload(filename, content, required_columns, requested_tickers, today=None):
-    """Mengecek satu file Ringkasan Saham IDX, hasilnya (tanggal file, tabel saham bank).
+    """Mengecek satu file Ringkasan Saham IDX dan mengambil baris saham bank yang didukung.
 
-    Yang dicek: file Excel bisa dibaca, jumlah baris wajar, kolom wajib lengkap, ada minimal satu
-    dari 11 saham, kode saham tidak dobel, nama file sesuai format IDX (Ringkasan Saham-YYYYMMDD.xlsx),
-    dan tanggalnya tidak lewat hari ini (WIB). Kalau gagal, muncul UploadValidationError dengan pesan yang jelas.
+    Args:
+        filename: Nama file, dipakai untuk membaca tanggal data.
+        content: Isi file Excel dalam bytes.
+        required_columns: Kolom yang wajib ada di file.
+        requested_tickers: Kode saham yang didukung aplikasi.
+        today: Batas tanggal paling akhir. Jika None, memakai tanggal hari ini di WIB.
+
+    Returns:
+        Tuple (snapshot, frame).
+        snapshot: Tanggal data dari nama file.
+        frame: Baris saham yang didukung, dengan Kode Saham huruf besar dan
+            Tanggal Perdagangan Terakhir berupa datetime.
+
+    Raises:
+        UploadValidationError: Jika file tidak terbaca, lebih dari 10.000 baris,
+            kolom wajib tidak ada atau ganda, tidak ada saham yang didukung, kode
+            saham ganda, nama file salah, atau Tanggal Perdagangan Terakhir kosong
+            atau melewati tanggal file maupun hari ini.
     """
     try:
         frame = pd.read_excel(BytesIO(content), engine=EXCEL_ENGINE)
@@ -98,7 +129,6 @@ def validate_market_upload(filename, content, required_columns, requested_ticker
             "File tidak memuat satu pun saham yang didukung aplikasi (" + ", ".join(requested_tickers) + ")."
         )
 
-    # file IDX isinya semua saham di bursa, yang diproses cuma 11 saham bank penelitian
     frame = frame.loc[matched].copy()
     duplicated_codes = sorted(frame.loc[frame["Kode Saham"].duplicated(), "Kode Saham"].unique())
     if duplicated_codes:

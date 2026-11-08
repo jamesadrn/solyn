@@ -1,30 +1,4 @@
-"""Solyn, aplikasi web skripsi "Prediksi Return Saham Perbankan Indonesia".
-
-Cara menjalankan dari folder proyek:  streamlit run application/app.py
-
-Aplikasi pakai model XGBoost dari penelitian (notebook 03) yang dilatih ulang
-dengan data IDX 2020 sampai 2025, lalu membuat portofolio Markowitz (notebook 05).
-Model bawaan disimpan di runtime/baseline_bundle.zip.
-
-Isi file ini dari atas ke bawah:
-1. Pengaturan        : lokasi file, batas upload, kode Remarks IDX
-2. Secrets dan izin  : login Google dan daftar pengguna di Google Sheet
-3. Membaca upload    : parse_market_file, parse_market_uploads, prepare_market_data
-4. Grafik pengujian  : build_oos_charts
-5. Tampilan          : logo, CSS, nama bank, daftar halaman (VIEWS)
-6. Login             : halaman login, current_identity, coba gratis 5 menit, halaman persetujuan
-7. Model bawaan      : load_local_baseline dan fungsi bantu format
-8. Halaman           : render_home, render_analysis, render_portfolio,
-                       render_performance, render_upload, render_about, render_admin
-9. main()            : memilih halaman yang ditampilkan
-
-File pendukung:
-- application/modeling.py         : model dan portofolio
-- application/baseline_builder.py : melatih ulang model bawaan
-- application/github_store.py     : menyimpan ke GitHub
-- upload_validation.py            : mengecek file IDX
-- feature_pipeline.py             : indikator teknikal dari notebook 02
-"""
+# Library
 import base64
 import csv
 from datetime import datetime, timedelta, timezone
@@ -45,27 +19,26 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+# Path Direktori
 BASE_DIR = Path(__file__).resolve().parents[1]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+# Function
 from application.modeling import (
-    FEATURES,
-    LATEST_LISTED_SHARES,
-    PORTFOLIO_TICKERS,
     build_portfolio_allocation,
     calculate_features,
-    optimize_max_sharpe,
     read_baseline_bundle,
     train_baseline_models,
 )
 from application.access_sheet import (
     APPROVAL_HEADERS,
-    ROLE_COLUMN,
     TRIAL_COLUMN,
     add_user,
     claim_trial,
+    clean_records,
     ensure_headers,
+    find_row,
     request_access,
     role_of,
     set_role,
@@ -73,40 +46,38 @@ from application.access_sheet import (
 )
 from application.baseline_builder import append_idx_rows, build_baseline_bundle
 from application.github_store import GitHubStoreError, github_is_configured, github_settings, publish_bundle
+from notebook_config import feature_columns as FEATURES, tickers as PORTFOLIO_TICKERS
+from pipeline_utils import optimize_max_sharpe
 from upload_validation import UploadValidationError, filename_date, validate_market_upload
 
-# ---------------------------------------------------------------------------
-# Pengaturan: lokasi file dan batas upload
-# ---------------------------------------------------------------------------
+# Konfigurasi Path out dan untuk ambil data hasil preprocessing
 OUTPUT_DIR = BASE_DIR / "output" / "research"
 PROCESSED_DIR = BASE_DIR / "data" / "processed"
-# hasil notebook 03 dan 02 yang disimpan di data/processed
+
+# File hasil notebook
 RESEARCH_SOURCES = {
     "predictions_2025.parquet": PROCESSED_DIR / "predictions_2025.parquet",
-    "master_panel_2020_2025.parquet": PROCESSED_DIR / "panel_calendar.parquet",
+    "panel_calendar.parquet": PROCESSED_DIR / "panel_calendar.parquet",
 }
 
 
 def research_path(filename):
-    """Lokasi file hasil notebook yang dibaca halaman Hasil Pengujian."""
+    """Lokasi file hasil notebook untuk ditampilin di Hasil Pengujian."""
     return RESEARCH_SOURCES.get(filename, OUTPUT_DIR / filename)
 
 
 DEFAULT_BASELINE_PATH = "runtime/baseline_bundle.zip"
 MAX_UPLOAD_FILES = 30
-MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 MAX_UPLOAD_TOTAL_BYTES = 30 * 1024 * 1024
 MAX_UPLOAD_UNCOMPRESSED_BYTES = 30 * 1024 * 1024
-# admin bisa upload banyak hari sekaligus buat update model bawaan
+# batas upload admin untuk update model bawaan
 MAX_ADMIN_UPLOAD_FILES = 260
 MAX_ADMIN_UPLOAD_TOTAL_BYTES = 300 * 1024 * 1024
-SESSION_MODEL_VERSION = 6
-# kolom yang wajib ada di file Ringkasan Saham IDX
 IDX_REQUIRED_COLUMNS = [
     "Kode Saham", "Remarks", "Open Price", "Tanggal Perdagangan Terakhir",
     "Tertinggi", "Terendah", "Penutupan", "Volume", "Listed Shares",
 ]
-# kode Remarks di file IDX dan artinya, dipakai buat mengenali stock split
+# kode Remarks IDX
 CORPORATE_ACTION_CODES = {
     "--": "Tidak ada aksi korporasi",
     "CD": "Cum Dividend",
@@ -122,13 +93,13 @@ CORPORATE_ACTION_CODES = {
 }
 EXPLICIT_SPLIT_CODES = {"SS", "RS"}
 INFERRED_SPLIT_CODES = {"CA", "XA", "CB", "XB"}
-# nama indikator yang tampil di aplikasi
+# keterangan indikator di aplikasi
 FEATURE_HELP = {
     "SMA10": "Rata-rata harga penutupan 10 hari terakhir. Dipakai untuk melihat arah tren jangka pendek.",
     "SMA20": "Rata-rata harga penutupan 20 hari terakhir. Dipakai untuk melihat arah tren yang lebih panjang.",
-    "EMA10": "Mirip SMA10, tapi harga hari-hari terakhir dibuat lebih berpengaruh. Jadi lebih cepat menangkap perubahan arah harga.",
+    "EMA10": "Mirip SMA10, tapi harga hari-hari terakhir memiliki bobot lebih tinggi. Jadi lebih cepat menangkap perubahan arah harga.",
     "RSI14": "Ukuran 0 sampai 100 untuk kekuatan kenaikan harga 14 hari terakhir. Di atas 70 berarti harga sudah naik banyak dalam waktu singkat. Di bawah 30 berarti harga sudah turun banyak.",
-    "MACD": "Selisih rata-rata harga 12 hari dan 26 hari. Positif berarti harga jangka pendek sedang di atas jangka panjang, tanda harga sedang naik.",
+    "MACD": "Selisih rata-rata harga 12 dan 26 hari. Positif berarti harga jangka pendek sedang di atas jangka panjang, tanda harga sedang naik.",
     "Signal": "Rata-rata MACD 9 hari terakhir. Kalau MACD di atas Signal, kenaikan harga sedang menguat. Kalau di bawah, sedang melemah.",
     "BB_Upper": "Batas atas kisaran harga yang biasa terjadi. Dihitung dari rata-rata harga 20 hari ditambah dua kali besar naik turunnya harga. Harga di dekat batas ini berarti sedang tinggi dibanding biasanya.",
     "BB_Lower": "Batas bawah kisaran harga yang biasa terjadi. Dihitung dari rata-rata harga 20 hari dikurangi dua kali besar naik turunnya harga. Harga di dekat batas ini berarti sedang rendah dibanding biasanya.",
@@ -149,15 +120,13 @@ FEATURE_LABELS = {
     "ATR14": "ATR14",
 }
 
-INDICATOR_HELP = ("Indikator teknikal adalah alat bantu yang umum dipakai investor untuk membaca pergerakan "
-                  "harga saham. Bentuknya angka yang dihitung dengan rumus dari harga beberapa hari terakhir. "
-                  "Contohnya SMA10, yaitu rata-rata harga penutupan 10 hari terakhir. "
-                  "Di Solyn, sepuluh indikator ini dipakai model untuk memperkirakan return hari perdagangan berikutnya.")
+INDICATOR_HELP = ("Indikator teknikal adalah alat bantu untuk menganalisis pergerakan "
+                  "harga saham berdasarkan data historis perdagangan. Indikator ini "
+                  "dihitung menggunakan rumus tertentu yang dapat melibatkan harga "
+                  "pembukaan, tertinggi, terendah, penutupan, maupun volume perdagangan. "
+                  )
 
-
-# ---------------------------------------------------------------------------
 # Secrets, login Google, dan izin akses lewat Google Sheet
-# ---------------------------------------------------------------------------
 def get_secret_section(name):
     """Mengambil satu bagian dari Streamlit Secrets, misalnya [auth]. Kosong kalau belum diisi."""
     try:
@@ -167,16 +136,14 @@ def get_secret_section(name):
 
 
 def auth_is_configured():
-    """Mengecek pengaturan login Google [auth] sudah lengkap atau belum."""
+    """Cek pengaturan login Google [auth] sudah lengkap atau belum."""
     auth = get_secret_section("auth")
     required = ["redirect_uri", "cookie_secret", "client_id", "client_secret", "server_metadata_url"]
     return all(auth.get(key) for key in required)
 
 
 def development_settings():
-    # login lokal cuma jalan kalau SOLYN_ALLOW_LOCAL_LOGIN=1 di komputer sendiri
-    # jadi kalau [development] ikut kebawa ke Streamlit Cloud, tetap tidak aktif
-    """Pengaturan login lokal buat mengetes di komputer sendiri, tidak aktif di Streamlit Cloud."""
+    """Pengaturan login lokal buat mode DEV."""
     if os.environ.get("SOLYN_ALLOW_LOCAL_LOGIN") != "1":
         return {"enabled": False}
     return get_secret_section("development")
@@ -190,21 +157,17 @@ def approval_settings():
 
 
 def approval_is_configured():
-    """Mengecek Google Sheet buat izin akses sudah bisa dipakai atau belum."""
+    """Cek permission Google Sheet"""
     settings = approval_settings()
     required = ["admin_email", "spreadsheet_id", "worksheet"]
     credentials = settings.get("service_account", {})
     credential_fields = ["project_id", "private_key", "client_email", "token_uri"]
-    return (
-        approval_is_enabled()
-        and all(settings.get(key) for key in required)
-        and all(credentials.get(key) for key in credential_fields)
-    )
+    return all(settings.get(key) for key in required) and all(credentials.get(key) for key in credential_fields)
 
 
 @st.cache_resource(show_spinner=False)
 def get_approval_worksheet():
-    """Membuka sheet daftar pengguna dan status izinnya."""
+    """Membuka database pengguna"""
     import gspread
 
     settings = approval_settings()
@@ -219,7 +182,7 @@ def get_approval_worksheet():
             rows=1000,
             cols=len(APPROVAL_HEADERS),
         )
-    # sheet lama otomatis ditambah kolom Percobaan Gratis
+    # menambah kolom yang belum ada
     ensure_headers(worksheet)
     return worksheet
 
@@ -239,21 +202,12 @@ def approval_request_lock():
 @st.cache_data(ttl=15, show_spinner=False)
 def load_approval_records():
     """Membaca semua baris daftar pengguna, di-cache 15 detik."""
-    records = get_approval_worksheet().get_all_records()
-    return [
-        {str(key).strip(): str(value).strip() for key, value in record.items()}
-        for record in records
-    ]
+    return clean_records(get_approval_worksheet())
 
 
 def find_approval_record(email):
-    """Mencari data izin untuk satu email."""
-    normalized_email = str(email).strip().lower()
-    matches = [record for record in load_approval_records()
-               if record.get("Email", "").strip().lower() == normalized_email]
-    if len(matches) > 1:
-        raise RuntimeError("Duplicate approval records")
-    return matches[0] if matches else None
+    """Mencari data izin untuk satu email, None kalau belum terdaftar."""
+    return find_row(load_approval_records(), email)[1]
 
 
 def create_approval_request(identity):
@@ -262,9 +216,8 @@ def create_approval_request(identity):
     if not actor or actor.get("local") or actor["email"] != identity.get("email"):
         raise PermissionError("Permintaan akses memerlukan akun Google yang aktif.")
     with approval_request_lock():
-        record = request_access(get_approval_worksheet(), actor["email"], actor["name"], wib_now())
+        request_access(get_approval_worksheet(), actor["email"], actor["name"], wib_now())
     load_approval_records.clear()
-    return record
 
 
 def wib_now():
@@ -277,19 +230,11 @@ def review_approval_request(email, status):
     actor = current_identity()
     if not actor or actor.get("local") or not actor.get("is_admin"):
         raise PermissionError("Tindakan ini hanya tersedia untuk administrator Google.")
-    if status not in {"Approved", "Rejected"}:
-        raise ValueError("Status persetujuan tidak valid.")
     worksheet = get_approval_worksheet()
-    records = [
-        {str(key).strip(): str(value).strip() for key, value in record.items()}
-        for record in worksheet.get_all_records()
-    ]
-    matches = [index for index, record in enumerate(records)
-               if record.get("Email", "").lower() == str(email).strip().lower()]
-    if len(matches) != 1:
-        raise ValueError("Akun tidak ditemukan atau tercatat lebih dari sekali.")
-    row_index = matches[0]
-    target = records[row_index]["Email"].lower()
+    row_index, record = find_row(clean_records(worksheet), email)
+    if record is None:
+        raise ValueError("Akun tidak ditemukan.")
+    target = record["Email"].lower()
     if status == "Rejected" and (target in owner_emails() or target == actor["email"]):
         raise ValueError("Akses pemilik aplikasi dan akun Anda sendiri tidak dapat dicabut.")
     changed_at = datetime.now(timezone(timedelta(hours=7))).isoformat(timespec="seconds")
@@ -298,31 +243,22 @@ def review_approval_request(email, status):
         range_name=f"D{row_index + 2}:E{row_index + 2}",
         value_input_option="RAW",
     )
-    records[row_index]["Status"] = status
-    records[row_index]["Tanggal Persetujuan"] = changed_at
-    if status == "Rejected" and role_of(records[row_index]) == "Admin":
-        # akun yang dicabut aksesnya otomatis kembali menjadi User
+    if status == "Rejected" and role_of(record) == "Admin":
+        # Update status akun yang di reject ke role user
         worksheet.update([["User"]], range_name=f"G{row_index + 2}", value_input_option="RAW")
-        records[row_index][ROLE_COLUMN] = "User"
     load_approval_records.clear()
-    return records
 
 
 def change_user_role(email, role):
-    """Admin mengubah role akun lain menjadi Admin atau User.
-
-    Pemilik aplikasi selalu Admin, dan admin tidak bisa menurunkan role dirinya sendiri
-    supaya selalu ada admin yang bisa mengelola aplikasi.
-    """
+    """Admin mengubah role akun lain menjadi Admin atau User."""
     actor = current_identity()
     if not actor or actor.get("local") or not actor.get("is_admin"):
         raise PermissionError("Tindakan ini hanya tersedia untuk administrator Google.")
     target = str(email).strip().lower()
     if role == "User" and (target in owner_emails() or target == actor["email"]):
         raise ValueError("Role admin pemilik aplikasi dan akun Anda sendiri tidak dapat dicabut.")
-    records = set_role(get_approval_worksheet(), target, role, wib_now())
+    set_role(get_approval_worksheet(), target, role, wib_now())
     load_approval_records.clear()
-    return records
 
 
 def register_user(email, name, role):
@@ -332,39 +268,36 @@ def register_user(email, name, role):
         raise PermissionError("Tindakan ini hanya tersedia untuk administrator Google.")
     email = str(email).strip().lower()
     if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
-        raise ValueError("Format email belum benar, contohnya nama@gmail.com.")
+        raise ValueError("Format email salah, contoh: budi@gmail.com.")
     name = str(name).strip() or email.split("@")[0]
-    records = add_user(get_approval_worksheet(), email, name, role, wib_now())
+    add_user(get_approval_worksheet(), email, name, role, wib_now())
     load_approval_records.clear()
-    return records
 
 
-# ---------------------------------------------------------------------------
-# Membaca dan mengecek file Ringkasan Saham IDX yang di-upload
-# ---------------------------------------------------------------------------
+# Membaca dan Cek file Ringkasan Saham IDX yang di-upload
 def parse_market_file(filename, content, repair_prices=True):
     """Membaca satu file Ringkasan Saham IDX jadi tabel harga 11 saham bank.
 
-    Urutannya: mengecek ekstensi dan ukuran, mengecek isi file Excel, mengecek kolom, nama file, dan tanggal,
-    mengganti nama kolom ke Date/Ticker/Open/High/Low/Close, lalu menolak harga atau volume yang tidak valid.
-    repair_prices=True untuk pengguna, Open/High/Low yang nol diisi dari Close biar grafiknya wajar.
-    repair_prices=False untuk admin, harga disimpan apa adanya seperti notebook 02.
+    Args:
+        filename: Nama file asli dari IDX, untuk membaca tanggal data.
+        content: Isi file .xlsx dalam bytes.
+        repair_prices: Jika True, Open, High, dan Low yang bernilai 0 diisi dari
+            Close. Upload admin memakai False, dan baris suspensinya diperbaiki
+            oleh repair_suspension_rows saat training.
+
+    Raises:
+        UploadValidationError: Jika struktur, isi, atau nilai harga file tidak valid.
     """
-    if Path(filename).suffix.lower() != ".xlsx":
-        raise UploadValidationError("File harus berformat .xlsx seperti file Ringkasan Saham dari IDX.")
-    if len(content) > MAX_UPLOAD_BYTES:
-        raise UploadValidationError("Ukuran file melebihi 5 MB.")
     try:
         with ZipFile(BytesIO(content)) as workbook:
             members = workbook.infolist()
             if len(members) > 500 or sum(item.file_size for item in members) > MAX_UPLOAD_UNCOMPRESSED_BYTES:
-                raise UploadValidationError("Isi file Excel terlalu besar. Gunakan file Ringkasan Saham harian dari IDX.")
+                raise UploadValidationError("Ukuran file Excel terlalu besar.")
     except UploadValidationError:
         raise
     except Exception as error:
-        raise UploadValidationError("File bukan Excel (.xlsx) yang valid atau rusak saat diunduh. Unduh ulang dari IDX.") from error
-    snapshot_date, frame = validate_market_upload(filename, content, IDX_REQUIRED_COLUMNS, DESIGN_TICKERS)
-    frame = frame[frame["Kode Saham"].isin(PORTFOLIO_TICKERS)].copy()
+        raise UploadValidationError("File tidak valid.") from error
+    snapshot_date, frame = validate_market_upload(filename, content, IDX_REQUIRED_COLUMNS, PORTFOLIO_TICKERS)
 
     frame = frame.rename(columns={
         "Kode Saham": "Ticker",
@@ -374,9 +307,6 @@ def parse_market_file(filename, content, repair_prices=True):
         "Penutupan": "Close",
     })
     frame["Date"] = snapshot_date
-    frame["Last Trade Date"] = pd.to_datetime(
-        frame["Tanggal Perdagangan Terakhir"], errors="coerce", dayfirst=True, format="mixed"
-    ).dt.tz_localize(None)
     frame["Remarks"] = frame["Remarks"].fillna("--").astype(str).str.strip()
     numeric_columns = ["Open", "High", "Low", "Close", "Volume", "Listed Shares"]
     frame[numeric_columns] = frame[numeric_columns].apply(pd.to_numeric, errors="coerce")
@@ -390,62 +320,57 @@ def parse_market_file(filename, content, repair_prices=True):
             "Penutupan dan Listed Shares harus lebih dari nol, Volume tidak boleh negatif."
         )
 
-    if not repair_prices:
-        # untuk admin, harga disimpan apa adanya seperti di notebook 02
-        frame["Source File"] = filename
-        return frame[[
-            "Date", "Ticker", "Open", "High", "Low", "Close", "Volume",
-            "Listed Shares", "Remarks", "Last Trade Date", "Source File",
-        ]]
-    frame["Open"] = frame["Open"].where(frame["Open"] > 0, frame["Close"])
-    frame["High"] = frame["High"].where(
-        frame["High"] > 0, frame[["Open", "Close"]].max(axis=1)
-    )
-    frame["Low"] = frame["Low"].where(
-        frame["Low"] > 0, frame[["Open", "Close"]].min(axis=1)
-    )
-    frame["High"] = frame[["Open", "High", "Low", "Close"]].max(axis=1)
-    frame["Low"] = frame[["Open", "High", "Low", "Close"]].min(axis=1)
+    if repair_prices:
+        # Open/High/Low nol diisi dari Close, khusus upload pengguna
+        frame["Open"] = frame["Open"].where(frame["Open"] > 0, frame["Close"])
+        frame["High"] = frame["High"].where(
+            frame["High"] > 0, frame[["Open", "Close"]].max(axis=1)
+        )
+        frame["Low"] = frame["Low"].where(
+            frame["Low"] > 0, frame[["Open", "Close"]].min(axis=1)
+        )
+        frame["High"] = frame[["Open", "High", "Low", "Close"]].max(axis=1)
+        frame["Low"] = frame[["Open", "High", "Low", "Close"]].min(axis=1)
     frame["Source File"] = filename
     return frame[[
         "Date", "Ticker", "Open", "High", "Low", "Close", "Volume",
-        "Listed Shares", "Remarks", "Last Trade Date", "Source File",
+        "Listed Shares", "Remarks", "Source File",
     ]]
 
 
 @st.cache_data(show_spinner=False, max_entries=600)
 def parse_market_file_cached(filename, content, repair_prices=True):
-    """Menyimpan hasil baca per file agar file tidak dibaca ulang setiap interaksi."""
+    """Menyimpan hasil baca per file agar file tidak dibaca ulang"""
     return parse_market_file(filename, content, repair_prices)
 
 
 def parse_market_uploads(uploaded_files, max_files=MAX_UPLOAD_FILES, max_total_bytes=MAX_UPLOAD_TOTAL_BYTES,
                          repair_prices=True, on_progress=None, check_dates=None):
-    """Membaca banyak file sekaligus lalu menggabungkan jadi satu tabel. Hasilnya (data, daftar_error).
+    """Membaca banyak file sekaligus lalu menggabungkan jadi satu tabel.
 
-    Pemeriksaan dibuat fail-fast supaya pengguna tidak menunggu semua file dibaca dulu:
-    1. Jumlah, ukuran, dan nama file dicek untuk semua file. Ini instan karena isi Excel belum dibuka,
-       jadi semua nama file yang salah bisa dilaporkan sekaligus.
-    2. Tanggal dari nama file dicek lewat check_dates (misalnya tanggal lama atau ada jeda), juga sebelum membaca isi.
-    3. Isi Excel dibaca per tanggal. Begitu ada file yang isinya bermasalah, pemeriksaan langsung berhenti.
-    Kalau ada dua file untuk tanggal yang sama (misalnya file asli dan salinan "(1)"), file pertama yang
-    isinya benar yang dipakai, sisanya dicatat di data.attrs["skipped_files"].
+    Untuk tanggal yang sama hanya satu file yang dipakai, dan nama tanpa "(1)"
+    dicoba lebih dulu. Pemeriksaan berhenti di tanggal pertama yang tidak punya
+    file valid.
+
+    Args:
+        uploaded_files: File dari st.file_uploader.
+        max_total_bytes: Batas total ukuran semua file dalam bytes.
+        repair_prices: Diteruskan ke parse_market_file.
+        on_progress: Fungsi opsional on_progress(selesai, total, nama_file) untuk progress bar.
+        check_dates: Fungsi opsional yang menerima daftar tanggal file dan
+            mengembalikan daftar pesan error, dipanggil sebelum isi file dibaca.
+
+    Returns:
+        Tuple (data, errors). Jika ada error, data bernilai None. Nama file yang
+        dilewati karena tanggalnya ganda disimpan di data.attrs["skipped_files"].
     """
     if len(uploaded_files) > max_files:
         return None, [f"Anda memilih {len(uploaded_files)} file. Unggah maksimal {max_files} file sekaligus."]
-    sizes = [uploaded_file.size if hasattr(uploaded_file, "size") else len(uploaded_file.getvalue())
-             for uploaded_file in uploaded_files]
-    oversized = [f"{uploaded_file.name}: Ukuran file melebihi {MAX_UPLOAD_BYTES // (1024 * 1024)} MB."
-                 for uploaded_file, size in zip(uploaded_files, sizes) if size > MAX_UPLOAD_BYTES]
-    if oversized:
-        return None, oversized
-    if sum(sizes) > max_total_bytes:
+    if sum(uploaded_file.size for uploaded_file in uploaded_files) > max_total_bytes:
         return None, [f"Ukuran seluruh file melebihi {max_total_bytes // (1024 * 1024)} MB. Kurangi jumlah file."]
     by_date, errors = {}, []
     for uploaded_file in uploaded_files:
         try:
-            if Path(uploaded_file.name).suffix.lower() != ".xlsx":
-                raise UploadValidationError("File harus berformat .xlsx seperti file Ringkasan Saham dari IDX.")
             by_date.setdefault(filename_date(uploaded_file.name), []).append(uploaded_file)
         except UploadValidationError as error:
             errors.append(f"{uploaded_file.name}: {error}")
@@ -458,7 +383,7 @@ def parse_market_uploads(uploaded_files, max_files=MAX_UPLOAD_FILES, max_total_b
     frames, skipped, checked = [], [], 0
     total = len(uploaded_files)
     for date in sorted(by_date):
-        # file tanpa tambahan "(1)" dicoba lebih dulu, salinannya jadi cadangan kalau file pertama rusak
+        # file tanpa "(1)" dicoba lebih dulu
         candidates = sorted(by_date[date], key=lambda item: ("(" in item.name, item.name))
         frame, first_error = None, None
         for uploaded_file in candidates:
@@ -475,51 +400,34 @@ def parse_market_uploads(uploaded_files, max_files=MAX_UPLOAD_FILES, max_total_b
             except Exception:
                 LOGGER.exception("Upload parsing failed")
                 first_error = first_error or (
-                    f"{uploaded_file.name}: File belum dapat dibaca. Pastikan file adalah Ringkasan Saham asli dari IDX."
+                    f"{uploaded_file.name}: File tidak dapat dibaca"
                 )
         if frame is None:
-            # fail-fast: file sesudahnya tidak dibaca lagi
             remaining = sum(len(files) for later, files in by_date.items() if later > date)
             note = [f"Pemeriksaan berhenti di file ini, jadi {remaining} file sesudahnya belum diperiksa."] if remaining else []
             return None, [first_error] + note
         frames.append(frame)
     if on_progress:
         on_progress(total, total, "")
-    if not frames:
-        return None, ["Tidak ada data yang dapat dibaca dari file yang dipilih."]
 
-    try:
-        data = (
-            pd.concat(frames, ignore_index=True)
-            .drop_duplicates(["Ticker", "Date"], keep="last")
-            .sort_values(["Ticker", "Date"])
-            .reset_index(drop=True)
-        )
-    except Exception:
-        LOGGER.exception("Upload combination failed")
-        return None, ["File belum dapat digabungkan. Periksa tanggal dan formatnya."]
+    data = (
+        pd.concat(frames, ignore_index=True)
+        .drop_duplicates(["Ticker", "Date"], keep="last")
+        .sort_values(["Ticker", "Date"])
+        .reset_index(drop=True)
+    )
     data.attrs["skipped_files"] = sorted(skipped)
     return data, []
-
-
-def describe_dates(dates):
-    """Tanggal-tanggal digabung per bulan supaya ringkas, misalnya "19, 20, 21 Agustus 2026"."""
-    groups = {}
-    for date in sorted(pd.Timestamp(d) for d in dates):
-        groups.setdefault((date.year, date.month), []).append(date)
-    parts = []
-    for days in groups.values():
-        month_text = date_label(days[0]).split(" ", 1)[1]
-        parts.append(", ".join(str(d.day) for d in days) + " " + month_text)
-    return "; ".join(parts)
 
 
 def render_upload_problems(errors, clear_key=None):
     """Masalah file ditampilkan dalam satu kotak merah dengan nama file lengkap.
 
-    Nama file di kotak unggah dipotong oleh Streamlit, jadi nama lengkap dan tanggalnya ditulis di sini
-    supaya filenya mudah dicari di folder. Tombol di bawahnya mengosongkan pilihan file sekaligus,
-    karena Streamlit tidak bisa menghapus satu file tertentu dari kotak unggah.
+    Args:
+        errors: Pesan error dari parse_market_uploads dengan format "nama.xlsx: alasan".
+            File dengan alasan yang sama digabung dalam satu baris.
+        clear_key: Kunci session state kotak unggah. Jika diisi, muncul tombol
+            untuk mengosongkan pilihan file.
     """
     grouped, general = {}, []
     for error in errors:
@@ -540,46 +448,34 @@ def render_upload_problems(errors, clear_key=None):
     lines.extend(general)
     if grouped:
         lines.append("Ganti file tersebut dengan file asli dari situs IDX. Tekan Kosongkan pilihan file, lalu pilih ulang file Anda.")
-    # st.error dipakai karena garis kirinya merah
     st.error("\n\n".join(lines))
     if clear_key:
         st.button("Kosongkan pilihan file", key=f"{clear_key}_clear", on_click=clear_uploads, args=(clear_key,))
 
 
 def clear_uploads(round_key):
-    """Mengosongkan kotak unggah dengan menaikkan nomor putarannya."""
+    """Mengosongkan kotak unggah"""
     st.session_state[round_key] = st.session_state.get(round_key, 0) + 1
 
 
 def render_skipped_files(data):
     """Keterangan singkat kalau ada file ganda untuk tanggal yang sama yang dilewati."""
-    skipped = data.attrs.get("skipped_files", []) if data is not None else []
+    skipped = data.attrs.get("skipped_files", [])
     if skipped:
         st.info(f"{len(skipped)} file ganda untuk tanggal yang sama tidak dipakai: " + ", ".join(skipped) + ".")
 
 
 class CorporateActionSafetyError(ValueError):
     """Error kalau data upload punya aksi korporasi atau perubahan harga yang tidak bisa disesuaikan dengan aman."""
-    pass
 
 
 def prepare_market_data(data):
-    """Menyesuaikan harga data gabungan (bawaan dan upload) kalau ada stock split.
-
-    Untuk tiap saham, membaca kode Remarks IDX dan rasio Listed Shares hari ini dibanding kemarin,
-    lalu harga sebelum split disesuaikan. Kalau ada lonjakan harga atau jumlah saham yang tidak
-    ada penjelasannya di Remarks, training dihentikan biar model tidak belajar dari data yang salah.
-    Hasilnya (data, catatan_split).
-    """
-    prepared_groups, audit_rows = [], []
+    """Menyesuaikan harga data gabungan (bawaan dan upload) kalau ada stock split."""
+    prepared_groups = []
     source = data.copy()
-    if "Remarks" not in source:
-        source["Remarks"] = "--"
-    if "Listed Shares" not in source:
-        source["Listed Shares"] = source["Ticker"].map(LATEST_LISTED_SHARES)
 
     for ticker, ticker_data in source.groupby("Ticker"):
-        frame = ticker_data.sort_values("Date").drop_duplicates("Date", keep="last").copy()
+        frame = ticker_data.sort_values("Date").copy()
         frame["Remarks"] = frame["Remarks"].fillna("--").astype(str).str.strip()
         frame["ca_code"] = frame["Remarks"].str[:2].str.upper()
         unknown_codes = sorted(set(frame["ca_code"]) - set(CORPORATE_ACTION_CODES))
@@ -613,9 +509,8 @@ def prepare_market_data(data):
         invalid_explicit = explicit_split & ~explicit_split_ok
         inferred_candidate = frame["ca_code"].isin(INFERRED_SPLIT_CODES) & material_change
         inferred_split = inferred_candidate & (frame["basis_neutral_return"].abs() <= 0.20)
-        # data bawaan sudah disesuaikan, jadi mengecek anomali cuma untuk baris upload baru
-        # stock split di baris upload tetap dideteksi
-        uploaded_row = frame["Source File"].notna() if "Source File" in frame else True
+        # anomali hanya dicek di baris upload
+        uploaded_row = frame["Source File"].notna()
         unexplained_change = (
             (frame["ca_code"] == "--")
             & (material_change | price_anomaly | volume_price_anomaly)
@@ -651,23 +546,13 @@ def prepare_market_data(data):
         frame["Low"] = frame["Low"] * adjustment_factor
         frame["Close"] = frame["Close"] * adjustment_factor
         frame["Volume"] = frame["Volume"] / adjustment_factor
-        for _, event in frame[auto_adjust].iterrows():
-            audit_rows.append({
-                "Date": event["Date"],
-                "Ticker": ticker,
-                "Kode": event["ca_code"],
-                "Aksi": CORPORATE_ACTION_CODES[event["ca_code"]],
-                "Rasio saham": event["shares_ratio"],
-            })
         prepared_groups.append(frame)
 
     prepared = pd.concat(prepared_groups, ignore_index=True).sort_values(["Ticker", "Date"])
-    return prepared.reset_index(drop=True), pd.DataFrame(audit_rows)
+    return prepared.reset_index(drop=True)
 
 
-# ---------------------------------------------------------------------------
 # Format tanggal dan grafik halaman Hasil Pengujian
-# ---------------------------------------------------------------------------
 def format_date_id(value):
     """Format tanggal ke bahasa Indonesia, contohnya 30 Desember 2025."""
     date = pd.Timestamp(value)
@@ -678,44 +563,58 @@ def format_date_id(value):
     return f"{date.day} {month_names[date.month - 1]} {date.year}"
 
 
+# warna grafik, disamakan dengan warna di solyn.css
+CHART_CANVAS = "#F7F9FC"
+CHART_INK = "#162235"
+CHART_TEXT = "#475569"
+CHART_GRID = "#E2E8F0"
+CHART_ZEROLINE = "#CBD5E1"
+CHART_REFERENCE = "#94A3B8"
+CHART_GREEN = "#176342"
+CHART_RED = "#A4262C"
+CHART_MODEL = "#0072B2"
+CHART_MODEL_FILL = "rgba(0,114,178,.10)"
+CHART_BENCHMARK = "#E69F00"
+CHART_ACTUAL = "#0072B2"
+CHART_ACTUAL_BELOW = "#B45F06"
+CHART_FORECAST = "#A7372E"
+CHART_FONT = "Segoe UI, Arial, sans-serif"
+CHART_CONFIG = {"displayModeBar": False}
+
+
 def oos_chart_layout(height, yaxis_title):
     """Layout bersama untuk grafik hasil pengujian 2025."""
     return {
         "height": height,
         "margin": {"l": 12, "r": 12, "t": 28, "b": 12},
-        "paper_bgcolor": "rgba(0,0,0,0)",
-        "plot_bgcolor": "rgba(0,0,0,0)",
         "hovermode": "x unified",
         "legend": {"orientation": "h", "y": 1.14, "x": 0},
-        "yaxis_title": yaxis_title,
+        "xaxis": {"showgrid": False},
+        "yaxis": {"showgrid": True, "title": yaxis_title},
     }
 
 
 def build_oos_charts(daily, quarterly):
     """Membuat 3 grafik halaman Hasil Pengujian: return kumulatif, drawdown, dan return per kuartal."""
-    model_color = "#0072B2"
-    benchmark_color = "#E69F00"
     model_quarterly = quarterly["Realized Return XGBoost-Markowitz (%)"]
     benchmark_quarterly = quarterly["Realized Return Historical Mean (%)"]
     cumulative = go.Figure()
     cumulative.add_trace(go.Scatter(
-        x=daily["snapshot_date"],
+        x=daily["realized_date"],
         y=daily["cum_xgb"] * 100,
         name="Portofolio Model",
-        line={"color": model_color, "width": 2.4},
+        line={"color": CHART_MODEL, "width": 2.4},
         hovertemplate="%{y:+.2f}%<extra></extra>",
     ))
     cumulative.add_trace(go.Scatter(
-        x=daily["snapshot_date"],
+        x=daily["realized_date"],
         y=daily["cum_hist"] * 100,
         name="Portofolio Pembanding",
-        line={"color": benchmark_color, "width": 2, "dash": "dash"},
+        line={"color": CHART_BENCHMARK, "width": 2, "dash": "dash"},
         hovertemplate="%{y:+.2f}%<extra></extra>",
     ))
-    cumulative.add_hline(y=0, line_dash="dot", line_color="rgba(128,128,128,.45)")
+    cumulative.add_hline(y=0, line_dash="dot", line_color=CHART_REFERENCE)
     cumulative.update_layout(**oos_chart_layout(360, "Return kumulatif (%)"))
-    cumulative.update_xaxes(showgrid=False)
-    cumulative.update_yaxes(showgrid=True, gridcolor="rgba(128,128,128,.14)")
 
     model_wealth = (1 + daily["return_xgb"]).cumprod()
     benchmark_wealth = (1 + daily["return_hist"]).cumprod()
@@ -723,31 +622,29 @@ def build_oos_charts(daily, quarterly):
     benchmark_drawdown = (benchmark_wealth / benchmark_wealth.cummax().clip(lower=1) - 1) * 100
     drawdown = go.Figure()
     drawdown.add_trace(go.Scatter(
-        x=daily["snapshot_date"],
+        x=daily["realized_date"],
         y=model_drawdown,
         name="Portofolio Model",
         fill="tozeroy",
-        fillcolor="rgba(0,114,178,.10)",
-        line={"color": model_color, "width": 1.5},
+        fillcolor=CHART_MODEL_FILL,
+        line={"color": CHART_MODEL, "width": 1.5},
         hovertemplate="%{y:.2f}%<extra></extra>",
     ))
     drawdown.add_trace(go.Scatter(
-        x=daily["snapshot_date"],
+        x=daily["realized_date"],
         y=benchmark_drawdown,
         name="Portofolio Pembanding",
-        line={"color": benchmark_color, "width": 1.7, "dash": "dash"},
+        line={"color": CHART_BENCHMARK, "width": 1.7, "dash": "dash"},
         hovertemplate="%{y:.2f}%<extra></extra>",
     ))
     drawdown.update_layout(**oos_chart_layout(310, "Drawdown (%)"))
-    drawdown.update_xaxes(showgrid=False)
-    drawdown.update_yaxes(showgrid=True, gridcolor="rgba(128,128,128,.14)")
 
     quarterly_chart = go.Figure()
     quarterly_chart.add_trace(go.Bar(
         x=quarterly["Kuartal"],
         y=model_quarterly,
         name="Portofolio Model",
-        marker_color=model_color,
+        marker_color=CHART_MODEL,
         text=[f"{value:+.2f}%" for value in model_quarterly],
         texttemplate="%{text}",
         textposition="outside",
@@ -759,7 +656,7 @@ def build_oos_charts(daily, quarterly):
         x=quarterly["Kuartal"],
         y=benchmark_quarterly,
         name="Portofolio Pembanding",
-        marker_color=benchmark_color,
+        marker_color=CHART_BENCHMARK,
         text=[f"{value:+.2f}%" for value in benchmark_quarterly],
         texttemplate="%{text}",
         textposition="outside",
@@ -767,40 +664,26 @@ def build_oos_charts(daily, quarterly):
         cliponaxis=False,
         hovertemplate="%{x}<br>%{y:+.2f}%<extra></extra>",
     ))
-    quarterly_layout = oos_chart_layout(400, "Return per kuartal (%)")
-    quarterly_layout["barmode"] = "group"
-    quarterly_layout["font"] = {"size": 14}
-    quarterly_layout["margin"] = {"l": 18, "r": 18, "t": 48, "b": 20}
-    quarterly_layout["legend"] = {
-        "orientation": "h", "y": 1.16, "x": 0, "font": {"size": 14},
-    }
-    quarterly_chart.update_layout(**quarterly_layout)
-    quarterly_chart.update_xaxes(showgrid=False, tickfont={"size": 14})
-    quarterly_chart.update_yaxes(
-        showgrid=True,
-        gridcolor="rgba(128,128,128,.14)",
-        tickfont={"size": 13},
-        title_font={"size": 15},
-    )
+    quarterly_chart.update_layout(**{
+        **oos_chart_layout(400, "Return per kuartal (%)"),
+        "barmode": "group",
+        "margin": {"l": 18, "r": 18, "t": 48, "b": 20},
+        "legend": {"orientation": "h", "y": 1.16, "x": 0, "font": {"size": 14}},
+    })
+    quarterly_chart.update_xaxes(tickfont={"size": 14})
+    quarterly_chart.update_yaxes(tickfont={"size": 13}, title_font={"size": 15})
     return cumulative, drawdown, quarterly_chart
 
 
-# ---------------------------------------------------------------------------
 # Tampilan: judul tab, logo, CSS, nama bank, daftar halaman
-# ---------------------------------------------------------------------------
 LOGGER = logging.getLogger(__name__)
-# logo dengan latar transparan supaya menyatu dengan warna sidebar dan halaman login
 LOGO_PATH = BASE_DIR / "assets" / "logo_transparent.png"
-if not LOGO_PATH.exists():
-    LOGO_PATH = BASE_DIR / "assets" / "logo_with_text.png"
 ICON_PATH = BASE_DIR / "assets" / "logo_only.png"
 st.set_page_config(page_title="Solyn",
-                   page_icon=str(ICON_PATH) if ICON_PATH.exists() else None,
+                   page_icon=str(ICON_PATH),
                    layout="wide", initial_sidebar_state="expanded")
-# semua gaya tampilan ada di assets/solyn.css
 st.markdown("<style>" + (BASE_DIR / "assets" / "solyn.css").read_text(encoding="utf-8") + "</style>", unsafe_allow_html=True)
 
-# nama bank per kode saham, urutannya dipakai di semua halaman
 BANK_NAMES = {
     "BBCA":"Bank Central Asia", "BBNI":"Bank Negara Indonesia",
     "BBRI":"Bank Rakyat Indonesia", "BBTN":"Bank Tabungan Negara",
@@ -808,8 +691,6 @@ BANK_NAMES = {
     "BMRI":"Bank Mandiri", "BNGA":"Bank CIMB Niaga", "BNLI":"Bank Permata",
     "BTPS":"Bank BTPN Syariah", "PNBN":"Bank Pan Indonesia",
 }
-DESIGN_TICKERS = list(BANK_NAMES)
-# identitas pembuat dan dosen pembimbing untuk halaman Tentang
 AUTHOR = {
     "nama": "James Anderson",
     "nim": "535230065",
@@ -820,24 +701,14 @@ SUPERVISORS = [
     "Tony, S.Kom., M.Kom., Ph. D. (1080005)",
     "Irvan Lewenusa, S.Kom., M.Kom. (10823004)",
 ]
-# daftar halaman, kiri kode di URL (?view=...), kanan judul yang tampil
+# kode di URL (?view=...) dan judul halaman
 VIEWS = {"home":"Home", "analysis":"Prediksi Saham", "portfolio":"Simulasi Portofolio",
          "performance":"Hasil Pengujian", "upload":"Unggah Data", "about":"Tentang",
          "admin":"Panel Admin"}
 
 
-# ---------------------------------------------------------------------------
 # Login, coba gratis 5 menit, dan status akses
-# ---------------------------------------------------------------------------
-def approval_is_enabled():
-    # akun Google harus di-approve admin dulu
-    """Izin admin selalu wajib untuk akun Google, kecuali admin sendiri."""
-    return True
-
-
-# Angkanya detik. 11 * 60 * 60 = 11 jam.
-# Token Google umurnya cuma 1 jam. Lewat itu pengguna otomatis keluar.
-# Ditambah 11 jam di sini, jadi total sesinya 12 jam. Mau total 3 jam, isi 2.
+# tambahan di atas umur token Google 1 jam, total sesi 12 jam
 SESSION_EXTRA_SECONDS = 11 * 60 * 60
 
 TRIAL_SESSION_KEY = "v3_trial"
@@ -846,7 +717,7 @@ APPROVED_NOTICE_KEY = "v3_approved_notice"
 
 
 def trial_settings():
-    """Pengaturan coba gratis. Defaultnya aktif 5 menit, bisa diubah lewat Secrets [trial]."""
+    """Pengaturan coba gratis. Defaultnya aktif 5 menit"""
     settings = get_secret_section("trial")
     try:
         minutes = float(settings.get("minutes", 5))
@@ -871,15 +742,10 @@ def trial_record_window(email):
         return None
 
 
-def owner_emails(admins=None):
-    """Email pemilik aplikasi dari Secrets. Role admin pemilik tidak bisa dicabut lewat aplikasi."""
-    if admins is None:
-        admins = get_secret_section("access_v3").get("admin_emails", [])
-        if isinstance(admins, str):
-            admins = [admins]
-        legacy_admin = get_secret_section("approval").get("admin_email", "")
-        admins = list(admins) + ([legacy_admin] if legacy_admin else [])
-    return {str(x).strip().lower() for x in admins if str(x).strip()}
+def owner_emails():
+    """Email pemilik aplikasi dari Secrets [approval]. Role admin pemilik tidak bisa dicabut lewat aplikasi."""
+    email = str(get_secret_section("approval").get("admin_email", "")).strip().lower()
+    return {email} if email else set()
 
 
 def admin_in_sheet(email):
@@ -912,23 +778,24 @@ def trial_state():
     return {"expires_at": identity["trial_expires_at"]}
 
 
-def trial_seconds_left(trial=None):
+def trial_seconds_left(trial):
     """Sisa waktu coba gratis dalam detik."""
-    trial = trial or trial_state()
-    if not trial:
-        return 0
     return max(0, int(trial["expires_at"] - datetime.now(timezone.utc).timestamp()))
 
 
 def start_trial(identity, destination="home"):
     """Memulai coba gratis untuk akun Google ini. Satu email cuma bisa sekali.
 
-    Waktu coba gratis langsung dicatat bersama permintaan akses ke admin, jadi admin
-    bisa menyetujui akun ini selagi pengguna mencoba aplikasi.
-    Hasilnya "started", "used", "rejected", atau "unavailable".
+    Args:
+        identity: Akun yang sedang login, berisi email dan name.
+        destination: Halaman tujuan setelah coba gratis dimulai. Halaman admin
+            atau nama yang tidak dikenal diarahkan ke home.
+
+    Returns:
+        "started" jika berhasil, "used" jika email ini sudah pernah memakai coba
+        gratis, "rejected" jika aksesnya pernah ditolak, atau "unavailable" jika
+        gagal.
     """
-    if not trial_available() or not identity or local_approval_bypass(identity) or identity.get("is_admin"):
-        return "unavailable"
     try:
         with approval_request_lock():
             worksheet = get_approval_worksheet()
@@ -957,12 +824,11 @@ def enforce_trial_expiry():
     """Dicek tiap rerun. Kalau waktu coba gratis habis, data sesi dihapus dan pengguna diberi tahu."""
     identity = current_identity()
     if identity and identity.get("trial"):
-        # catat batas waktu di sesi, supaya habisnya waktu bisa dikenali di rerun berikutnya
         st.session_state[TRIAL_SESSION_KEY] = identity["trial_expires_at"]
         return False
     if st.session_state.get(TRIAL_SESSION_KEY) is not None:
         if identity and access_status(identity) == "approved":
-            # admin menyetujui akun ini di tengah coba gratis: lanjut tanpa batas waktu, data sesi tetap ada
+            # disetujui admin di tengah coba gratis
             st.session_state.pop(TRIAL_SESSION_KEY, None)
             st.session_state[APPROVED_NOTICE_KEY] = True
             return False
@@ -973,11 +839,7 @@ def enforce_trial_expiry():
 
 
 def current_identity():
-    """Siapa pengguna sekarang: akun Google, coba gratis, login lokal, atau None kalau tamu.
-
-    Identitas cuma dari login Streamlit yang sudah terverifikasi, sesi coba gratis,
-    atau mode lokal. Parameter di URL tidak pernah bisa memberi akses.
-    """
+    """Siapa pengguna sekarang: akun Google, coba gratis, login lokal, atau None kalau tamu."""
     dev = development_settings()
     if getattr(st.user, "is_logged_in", False):
         expiry = st.user.get("exp")
@@ -998,17 +860,10 @@ def current_identity():
         if not identity:
             return None
         identity = dict(identity)
-    admins = get_secret_section("access_v3").get("admin_emails", [])
-    if isinstance(admins, str):
-        admins = [admins]
-    legacy_admin = get_secret_section("approval").get("admin_email", "")
-    if legacy_admin:
-        admins = list(admins) + [legacy_admin]
-    identity["is_owner"] = identity["email"].lower() in owner_emails(admins)
+    identity["is_owner"] = identity["email"].lower() in owner_emails()
     identity["is_admin"] = identity["is_owner"] or admin_in_sheet(identity["email"])
     if not identity["is_admin"]:
-        # coba gratis aktif kalau waktu mulainya di sheet belum lewat dari batas menit
-        # dan admin belum menyetujui akun ini (kalau sudah disetujui, batas waktu tidak berlaku lagi)
+        # coba gratis aktif selama belum lewat batas waktu dan belum disetujui
         window = trial_record_window(identity["email"])
         if window and datetime.now(timezone.utc) < window[1] and not approved_in_sheet(identity["email"]):
             identity["trial"] = True
@@ -1018,12 +873,7 @@ def current_identity():
 
 def set_view(view):
     """Pindah halaman lewat parameter view di URL."""
-    if (view == "analysis" and st.query_params.get("view", "home") == "home"
-            and "v3_home_ticker" in st.session_state):
-        st.session_state["v3_ticker_widget"] = st.session_state["v3_home_ticker"]
-    elif view == "home" and "v3_ticker" in st.session_state:
-        st.session_state["v3_home_ticker"] = st.session_state["v3_ticker"]
-    st.query_params["view"] = view if view in VIEWS else "home"
+    st.query_params["view"] = view
 
 
 def local_sign_in():
@@ -1039,7 +889,6 @@ def local_sign_in():
 def sign_out_v3():
     """Logout. Semua data sesi dihapus, lalu logout dari Google kalau tadi login pakai Google."""
     was_google = bool(getattr(st.user, "is_logged_in", False))
-    # menghapus data upload, hasil, dan isian form di sesi ini
     for key in list(st.session_state):
         del st.session_state[key]
     st.query_params.clear()
@@ -1061,22 +910,18 @@ GOOGLE_ICON_PATH = BASE_DIR / "assets" / "google_g.png"
 
 def image_base64(path):
     """Isi gambar dalam base64 supaya bisa ditaruh langsung di HTML atau CSS."""
-    return base64.b64encode(path.read_bytes()).decode("ascii") if path.exists() else ""
+    return base64.b64encode(path.read_bytes()).decode("ascii")
 
 
 def render_auth_logo(css_class):
     """Logo Solyn lengkap dengan tulisannya."""
     encoded = image_base64(LOGO_PATH)
-    if encoded:
-        st.markdown(f'<img class="{css_class}" src="data:image/png;base64,{encoded}" alt="Solyn">',
-                    unsafe_allow_html=True)
+    st.markdown(f'<img class="{css_class}" src="data:image/png;base64,{encoded}" alt="Solyn">',
+                unsafe_allow_html=True)
 
 
 def render_auth_layout(render_body):
-    """Susunan halaman login dan persetujuan: isi di kiri, logo Solyn di kanan.
-
-    Di HP kolom kanan disembunyikan dan logo kecil muncul di atas isi.
-    """
+    """Susunan halaman login dan persetujuan: isi di kiri, logo Solyn di kanan."""
     hide_sidebar()
     with st.container(key="solyn_auth"):
         left, right = st.columns(2, gap="large", vertical_alignment="center")
@@ -1099,12 +944,11 @@ def render_login_body():
                 f'<p class="solyn-auth-lead">{escape(APP_DESCRIPTION)}</p>', unsafe_allow_html=True)
     if auth_is_configured():
         icon = image_base64(GOOGLE_ICON_PATH)
-        if icon:
-            # logo Google ditempel lewat CSS karena tombol Streamlit tidak menerima gambar sebagai ikon
-            st.markdown('<style>.st-key-solyn_login_google button p::before {content:"";display:inline-block;'
-                        'width:22px;height:22px;margin-right:14px;vertical-align:-5px;'
-                        f'background:url(data:image/png;base64,{icon}) center/contain no-repeat}}</style>',
-                        unsafe_allow_html=True)
+        # ikon Google lewat CSS karena st.button tidak menerima gambar
+        st.markdown('<style>.st-key-solyn_login_google button p::before {content:"";display:inline-block;'
+                    'width:22px;height:22px;margin-right:14px;vertical-align:-5px;'
+                    f'background:url(data:image/png;base64,{icon}) center/contain no-repeat}}</style>',
+                    unsafe_allow_html=True)
         if st.button("Masuk dengan Google", key="solyn_login_google", use_container_width=True):
             st.login()
     else:
@@ -1127,18 +971,8 @@ def render_login_page():
 
 def render_access_page(identity):
     """Halaman untuk akun yang sudah masuk tapi belum disetujui admin."""
-    # pesan habisnya coba gratis sudah tercakup di status akses, jadi tidak ditampilkan dua kali
     st.session_state.pop(TRIAL_NOTICE_KEY, None)
     render_auth_layout(lambda: render_approval_gate(identity))
-
-
-def require_user(view):
-    """Penjaga di awal tiap halaman yang butuh login, termasuk kalau dibuka lewat link langsung."""
-    identity = current_identity()
-    if identity is None or access_status(identity) != "approved":
-        # main() akan menampilkan halaman login atau halaman persetujuan
-        st.rerun()
-    return identity
 
 
 def local_approval_bypass(identity):
@@ -1149,9 +983,7 @@ def local_approval_bypass(identity):
 
 
 def access_status(identity):
-    """Status akses pengguna: guest, approved, pending, new, rejected, atau unavailable."""
-    if not identity:
-        return "guest"
+    """Status akses pengguna: approved, pending, new, rejected, atau unavailable."""
     if identity.get("trial"):
         return "approved"
     if local_approval_bypass(identity):
@@ -1170,12 +1002,8 @@ def access_status(identity):
 
 
 def render_trial_offer(identity, status):
-    """Info coba gratis di halaman persetujuan.
-
-    Coba gratis biasanya dimulai otomatis saat login. Tombol di sini cuma cadangan
-    kalau pencatatan otomatis ke Google Sheet sempat gagal.
-    """
-    if local_approval_bypass(identity) or identity.get("is_admin") or status in {"rejected", "unavailable"}:
+    """Info coba gratis di halaman persetujuan."""
+    if status == "unavailable":
         return
     if not trial_available():
         return
@@ -1200,7 +1028,6 @@ def render_approval_gate(identity):
     """Halaman yang muncul kalau akun Google belum di-approve admin."""
     status = access_status(identity)
     if status == "rejected":
-        # akun yang ditolak cukup diberi tahu dan diberi tombol keluar
         st.markdown('<h1 class="solyn-auth-heading">Akses ditolak</h1>', unsafe_allow_html=True)
         st.caption(f"Akun: {identity['email']}")
         st.error("**Tidak dapat melanjutkan**  \nAkses Anda ke aplikasi Solyn ditolak oleh pengelola.")
@@ -1214,7 +1041,7 @@ def render_approval_gate(identity):
         prefix = "Masa coba gratis sudah habis. " if trial_used else ""
         st.info("**Menunggu persetujuan**  \n" + prefix + "Permintaan akses Anda sedang menunggu persetujuan pengelola.")
     elif status == "unavailable":
-        # terjadi kalau Google Sheet sesaat gagal dibaca, halaman mencoba lagi sendiri tiap 10 detik
+        # Google Sheet sementara gagal dibaca
         st.info("**Memeriksa status akses**  \nMohon tunggu sebentar, halaman akan diperbarui otomatis.")
     else:
         st.write("Kirim permintaan menggunakan akun Google ini. Persetujuan diperlukan untuk membuat prediksi, simulasi, unggahan, dan membaca hasil pengujian.")
@@ -1225,9 +1052,6 @@ def render_approval_gate(identity):
             except Exception:
                 LOGGER.exception("Approval request failed")
                 st.error("Permintaan belum dapat dikirim. Coba kembali beberapa saat lagi.")
-    contact = get_secret_section("access_v3").get("support_contact", "")
-    if contact:
-        st.write("Hubungi pengelola: " + str(contact))
     if status in {"pending", "unavailable"}:
         if status == "pending":
             st.caption("Halaman ini diperbarui otomatis setelah pengelola memberi keputusan.")
@@ -1239,33 +1063,26 @@ def render_approval_gate(identity):
 def watch_access_status(identity, shown_status):
     """Memeriksa status akses tiap 10 detik tanpa tombol.
 
-    Data Google Sheet di-cache 15 detik, jadi keputusan dari Apps Script atau Panel Admin
-    terlihat paling lama sekitar 25 detik. Kalau status berubah, seluruh halaman dimuat ulang.
+    Args:
+        identity: Akun yang sedang login.
+        shown_status: Status yang sedang tampil, misalnya "pending". Halaman
+            dimuat ulang jika status di sheet sudah berbeda.
     """
     if access_status(identity) != shown_status:
         st.rerun(scope="app")
 
 
-# ---------------------------------------------------------------------------
 # Load model bawaan (runtime/baseline_bundle.zip) dan fungsi bantu tampilan
-# ---------------------------------------------------------------------------
 def bundle_revision():
     """Penanda versi file model bawaan (waktu ubah dan ukuran), dipakai buat cache."""
     path = BASE_DIR / DEFAULT_BASELINE_PATH
-    return (path.stat().st_mtime_ns, path.stat().st_size) if path.exists() else (0, 0)
+    return (path.stat().st_mtime_ns, path.stat().st_size)
 
 
 @st.cache_resource(show_spinner=False, max_entries=2)
 def _baseline_for_revision(revision):
     """Load model bawaan dari runtime/baseline_bundle.zip, di-cache per versi."""
-    path = BASE_DIR / DEFAULT_BASELINE_PATH
-    if not path.exists():
-        return {}, {}, {}
-    try:
-        return read_baseline_bundle(path.read_bytes())
-    except Exception:
-        LOGGER.exception("Baseline could not be loaded")
-        return {}, {}, {"load_error":True}
+    return read_baseline_bundle((BASE_DIR / DEFAULT_BASELINE_PATH).read_bytes())
 
 
 def load_local_baseline():
@@ -1276,24 +1093,18 @@ def load_local_baseline():
 @st.cache_data(show_spinner=False, max_entries=2)
 def _public_manifest(revision):
     """Info ringan buat Home (tanggal data dan daftar saham) tanpa load model."""
-    try:
-        with ZipFile(BASE_DIR / DEFAULT_BASELINE_PATH) as archive:
-            raw = json.loads(archive.read("manifest.json"))
-        return {k:raw.get(k) for k in ["market_data_date", "published_at", "training_completed_at", "tickers"]}
-    except Exception:
-        return {}
+    with ZipFile(BASE_DIR / DEFAULT_BASELINE_PATH) as archive:
+        raw = json.loads(archive.read("manifest.json"))
+    return {k:raw.get(k) for k in ["market_data_date", "published_at", "training_completed_at", "tickers"]}
 
 
 @st.cache_data(show_spinner=False, max_entries=2)
 def _market_history(revision):
     """Riwayat harga yang sudah disesuaikan split, disimpan di dalam bundle."""
-    try:
-        with ZipFile(BASE_DIR / DEFAULT_BASELINE_PATH) as archive:
-            history = pd.read_csv(BytesIO(archive.read("market_history.csv")))
-        history["Date"] = pd.to_datetime(history["Date"], errors="coerce")
-        return history.dropna(subset=["Date", "Ticker", "Close"])
-    except Exception:
-        return pd.DataFrame()
+    with ZipFile(BASE_DIR / DEFAULT_BASELINE_PATH) as archive:
+        history = pd.read_csv(BytesIO(archive.read("market_history.csv")))
+    history["Date"] = pd.to_datetime(history["Date"], errors="coerce")
+    return history.dropna(subset=["Date", "Ticker", "Close"])
 
 
 def load_local_market_history():
@@ -1320,10 +1131,7 @@ def bank_label(ticker):
 
 
 def prediction_target(manifest):
-    """Perkiraan tanggal yang diprediksi, yaitu hari kerja setelah data harga terakhir.
-
-    Kalender libur bursa belum dimasukkan, makanya di tampilan disebut perkiraan.
-    """
+    """Perkiraan tanggal yang diprediksi, yaitu hari kerja setelah data harga terakhir."""
     value = manifest.get("market_data_date")
     try:
         stamp = pd.Timestamp(value)
@@ -1339,9 +1147,6 @@ def prediction_target(manifest):
 def show_data_status(manifest):
     """Memberi tahu kalau data harga sudah lama, supaya pengguna tahu hasilnya berdasarkan data kapan."""
     value = manifest.get("market_data_date")
-    if not value:
-        st.warning("Data belum tersedia. Pengelola perlu menyelesaikan pembaruan. Anda tidak perlu mengunggah file untuk pemakaian normal.")
-        return
     today = pd.Timestamp.now(tz="Asia/Jakarta").date()
     if (today - pd.Timestamp(value).date()).days > 7:
         st.warning(f"Data harga terakhir {date_label(value)}. Hasil bisa kurang sesuai dengan kondisi pasar sekarang.")
@@ -1349,31 +1154,18 @@ def show_data_status(manifest):
 
 def current_session_model():
     """Model sementara hasil upload pengguna di sesi ini, kalau ada."""
-    result = st.session_state.get("session_model_result")
-    if result and result.get("schema_version") != SESSION_MODEL_VERSION:
-        st.session_state.pop("session_model_result", None)
-        st.session_state.pop("v3_source", None)
-        st.session_state.pop("v3_source_widget", None)
-        st.session_state.pop("v3_prediction", None)
-        st.session_state.pop("v3_allocation", None)
-        return None
-    return result
+    return st.session_state.get("session_model_result")
 
 
 def source_context():
     """Menentukan model yang dipakai, model bawaan atau model sementara dari upload."""
     models, samples, manifest = load_local_baseline()
     session = current_session_model()
-    options = ["baseline"] if models else []
+    options = ["baseline"]
     if session:
         options.append("session")
-    if not options:
-        st.warning("Model belum tersedia. Coba kembali setelah pembaruan selesai.")
-        st.stop()
     labels = {"baseline":"Data aplikasi", "session":"Data unggahan saya"}
     current = st.session_state.get("v3_source", options[0])
-    if current not in options:
-        current = options[0]
     if len(options) > 1:
         chosen = st.selectbox("Data yang digunakan", options, index=options.index(current),
             format_func=labels.get, key="v3_source_widget")
@@ -1381,15 +1173,22 @@ def source_context():
         chosen = options[0]
     st.session_state["v3_source"] = chosen
     if chosen == "session":
-        return session["models"], session["latest_features"], session, "data unggahan Anda", session["version"]
-    return models, samples, manifest, "data aplikasi", str(bundle_revision())
+        return session["models"], session["latest_features"], session, session["version"]
+    return models, samples, manifest, str(bundle_revision())
 
 
 def ticker_choice(options, key="v3_ticker_widget"):
-    """Pilihan saham yang ingat pilihan terakhir pengguna."""
+    """Pilihan saham yang ingat pilihan terakhir pengguna.
+
+    Args:
+        options: Kode saham yang bisa dipilih.
+        key: Kunci session state widget. Pilihan dibagi antarhalaman lewat
+            v3_ticker, kecuali "v3_evaluation_ticker" di Hasil Pengujian yang
+            selalu mulai dari saham pertama.
+    """
     if key not in st.session_state or st.session_state[key] not in options:
         previous = st.session_state.get("v3_ticker", options[0]) if key != "v3_evaluation_ticker" else options[0]
-        st.session_state[key] = previous if previous in options else options[0]
+        st.session_state[key] = previous
     chosen = st.selectbox("Pilih saham", options, format_func=bank_label, key=key)
     if key != "v3_evaluation_ticker":
         st.session_state["v3_ticker"] = chosen
@@ -1416,7 +1215,7 @@ def render_data_sidebar():
     manifest = _public_manifest(bundle_revision())
     source = "Ringkasan Saham IDX"
     session = current_session_model()
-    if st.session_state.get("v3_source_widget", st.session_state.get("v3_source")) == "session" and session:
+    if st.session_state.get("v3_source_widget", st.session_state.get("v3_source")) == "session":
         manifest = session
         source = "Unggahan Anda dan Ringkasan Saham IDX"
     st.markdown(f'''<div class="solyn-data">
@@ -1432,22 +1231,24 @@ def render_nfa():
     st.markdown('''<div class="solyn-nfa"><span><b>Not Financial Advice. Bukan nasihat investasi.</b> Seluruh informasi di aplikasi ini bukan rekomendasi untuk membeli atau menjual saham. Keputusan investasi sepenuhnya tanggung jawab Anda, dan Solyn tidak bertanggung jawab atas kerugian yang timbul dari penggunaan aplikasi ini. Lakukan riset sendiri (DYOR) sebelum berinvestasi.</span></div>''', unsafe_allow_html=True)
 
 
-def page_heading(kicker, title, description):
+def page_heading(title, description):
     """Judul halaman plus penjelasan singkat."""
     st.title(title)
     st.markdown(f'<p class="v3-intro">{escape(description)}</p>', unsafe_allow_html=True)
 
 
-def style_chart(fig):
-    """Menyamakan gaya semua grafik dengan tema aplikasi."""
-    fig.update_layout(paper_bgcolor="#F7F9FC", plot_bgcolor="#F7F9FC",
-                      font=dict(family="Segoe UI, Arial, sans-serif",size=16,color="#475569"),
-                      colorway=["#153E75", "#176342", "#805500", "#5D4C91"],
-                      legend=dict(bgcolor="rgba(0,0,0,0)",font=dict(size=14,color="#475569")),
-                      hoverlabel=dict(bgcolor="#FFFFFF",font_color="#292823",bordercolor="#D7CDBB"))
-    fig.update_xaxes(gridcolor="#E7E1D5",zerolinecolor="#C9BDA9")
-    fig.update_yaxes(gridcolor="#E7E1D5",zerolinecolor="#C9BDA9")
-    return fig
+def render_chart(fig):
+    """Menyamakan gaya grafik dengan tema aplikasi, lalu menampilkannya."""
+    fig.update_layout(
+        paper_bgcolor=CHART_CANVAS, plot_bgcolor=CHART_CANVAS,
+        font={"family": CHART_FONT, "size": 16, "color": CHART_TEXT},
+        colorway=[CHART_MODEL, CHART_BENCHMARK, CHART_GREEN, CHART_RED],
+        legend={"bgcolor": "rgba(0,0,0,0)", "font": {"size": 14, "color": CHART_TEXT}},
+        hoverlabel={"bgcolor": "#FFFFFF", "font_color": CHART_INK, "bordercolor": CHART_ZEROLINE},
+    )
+    fig.update_xaxes(gridcolor=CHART_GRID, zerolinecolor=CHART_ZEROLINE)
+    fig.update_yaxes(gridcolor=CHART_GRID, zerolinecolor=CHART_ZEROLINE)
+    st.plotly_chart(fig, use_container_width=True, config=CHART_CONFIG)
 
 
 def build_home_price_chart(history, ticker):
@@ -1464,7 +1265,7 @@ def build_home_price_chart(history, ticker):
         y=selected["Close"],
         mode="lines",
         name=ticker,
-        line={"color": "#176342", "width": 2},
+        line={"color": CHART_GREEN, "width": 2},
         hovertemplate="%{x|%d %b %Y}<br>Harga %{y:,.0f}<extra></extra>",
     ))
     figure.update_layout(
@@ -1478,89 +1279,99 @@ def build_home_price_chart(history, ticker):
     return figure
 
 
-def render_market_table(history, tickers, forecasts=None, show_forecasts=False, target_label=""):
-    """Tabel harga terakhir semua saham, plus prediksinya kalau ada."""
-    forecasts = forecasts or {}
+def render_market_table(history, tickers, forecasts, target_label):
+    """Tabel harga terakhir semua saham, plus prediksinya kalau ada.
+
+    Args:
+        history: Riwayat harga dengan kolom Ticker, Date, dan Close.
+        forecasts: Prediksi return per saham dalam persen. Saham yang tidak punya
+            model ditampilkan "Model belum tersedia".
+        target_label: Tanggal target prediksi untuk judul kolom.
+    """
     records = []
     for ticker in sorted(tickers):
-        subset = history[history['Ticker'] == ticker].sort_values('Date') if not history.empty else pd.DataFrame()
-        prices = pd.to_numeric(subset['Close'], errors='coerce').dropna() if not subset.empty else pd.Series(dtype=float)
+        subset = history[history['Ticker'] == ticker].sort_values('Date')
+        prices = pd.to_numeric(subset['Close'], errors='coerce').dropna()
         close = f"{prices.iloc[-1]:,.0f}".replace(',', '.') if len(prices) else 'Tidak tersedia'
-        change = (prices.iloc[-1]/prices.iloc[-2]-1)*100 if len(prices)>1 and prices.iloc[-2] else None
+        change = (prices.iloc[-1]/prices.iloc[-2]-1)*100 if len(prices)>1 else None
         change_text = f"{change:+.2f}%" if change is not None else 'Tidak tersedia'
         change_class = 'solyn-up' if change is not None and change>=0 else 'solyn-down'
         prediction = forecasts.get(ticker)
-        pred_cell = (f'<td class="num {"solyn-up" if prediction>=0 else "solyn-down"}">{prediction:+.3f}%</td>' if prediction is not None else '<td class="num solyn-pending">Model belum tersedia</td>') if show_forecasts else ''
+        pred_cell = (f'<td class="num {"solyn-up" if prediction>=0 else "solyn-down"}">{prediction:+.3f}%</td>' if prediction is not None else '<td class="num solyn-pending">Model belum tersedia</td>')
         records.append(f'<tr><td><strong>{escape(ticker)}</strong><small>{escape(BANK_NAMES.get(ticker,ticker))}</small></td><td class="num">{close}</td><td class="num {change_class}">{change_text}</td>{pred_cell}</tr>')
-    # tanggal datanya ditempel di judul kolom
-    dates = sorted(pd.to_datetime(history['Date']).dropna().unique()) if not history.empty else []
-    last_day = date_label(dates[-1]) if dates else "terakhir"
-    previous_day = date_label(dates[-2]) if len(dates) > 1 else "hari sebelumnya"
-    forecast_header = f'<th class="num">Prediksi return<br>{escape(target_label)}</th>' if show_forecasts else ''
+    dates = sorted(pd.to_datetime(history['Date']).dropna().unique())
+    last_day = date_label(dates[-1])
+    previous_day = date_label(dates[-2])
+    forecast_header = f'<th class="num">Prediksi return<br>{escape(target_label)}</th>'
     st.markdown('<div class="solyn-table-wrap"><table class="solyn-table"><thead><tr><th>Saham</th>'
                 f'<th class="num">Harga penutupan (Rp)<br>{escape(last_day)}</th>'
                 f'<th class="num">Perubahan harga<br>dari {escape(previous_day)}</th>'
                 + forecast_header + '</tr></thead><tbody>' + ''.join(records) + '</tbody></table></div>', unsafe_allow_html=True)
 
 
-# ---------------------------------------------------------------------------
 # Halaman Home
-# ---------------------------------------------------------------------------
 def render_home():
     """Halaman Home: ringkasan pasar, grafik harga, dan jalan pintas ke fitur lain."""
-    require_user("home")
-    tickers = DESIGN_TICKERS
-    page_heading("Ruang kerja investasi · Saham perbankan Indonesia", "Prediksi saham perbankan",
+    tickers = PORTFOLIO_TICKERS
+    # Menampilkan judul dan deskripsi halaman Home
+    page_heading("Prediksi saham perbankan",
                  "Lihat prediksi return sebelas saham perbankan dan simulasikan pembagian dana investasi Anda.")
-    models, samples, metadata, label, version = source_context()
-    # dua tombol pindah halaman, yang kiri dibuat tombol utama
+    models, samples, metadata, version = source_context()
+    # Button shortcut
     with st.container(key="solyn_home_actions"):
         a, b = st.columns(2, gap="small")
         a.button("Prediksi Saham", type="primary", use_container_width=True,
                  key="v3_home_predict", on_click=set_view, args=("analysis",))
         b.button("Simulasi Portofolio", use_container_width=True,
                  key="v3_home_portfolio", on_click=set_view, args=("portfolio",))
+    # Subjudul dan deskripsi sebelum tabel
     target = prediction_target(metadata)
     st.markdown(f'<div class="solyn-section-head solyn-home-head"><h2>Harga dan Prediksi Saham untuk {escape(target)}</h2></div>'
                 '<p class="solyn-section-note">Kalau tanggal hari ini bursa libur, prediksi berlaku untuk hari bursa setelahnya.</p>',
                 unsafe_allow_html=True)
-    forecasts = {}
-    for code, model in sorted(models.items()):
-        if code not in BANK_NAMES:
-            continue
-        values = samples.get(code,{})
-        if all(k in values and np.isfinite(values[k]) for k in FEATURES):
-            forecasts[code] = float(model.predict(pd.DataFrame([values],columns=FEATURES))[0])*100
+    # Menghitung prediksi return tiap saham menggunakan model XGBoost
+    forecasts = {code: float(model.predict(pd.DataFrame([samples[code]], columns=FEATURES))[0]) * 100
+                 for code, model in models.items()}
     history = metadata.get("session_history")
     if history is None:
         history = load_local_market_history()
-    render_market_table(history,tickers,forecasts,show_forecasts=True,target_label=prediction_target(metadata))
 
+    # Menampilkan Tabel
+    render_market_table(history, tickers, forecasts, target_label=prediction_target(metadata))
+
+    # Subjudul grafik harga
     st.markdown('<div class="solyn-section-head"><h2>Grafik harga</h2></div>', unsafe_allow_html=True)
+    # Kolom dropdown
     chart_ticker = st.selectbox("Pilih saham", sorted(tickers), key="v3_home_chart_ticker")
     price_history = load_local_market_history()
     figure = build_home_price_chart(price_history, chart_ticker)
+    # Menampilkan grafik harga penutupan saham yang dipilih, atau pesan jika belum tersedia
     if figure is None:
         st.info(f"Riwayat harga {chart_ticker} belum tersedia.")
     else:
-        st.plotly_chart(style_chart(figure), use_container_width=True, config={"displayModeBar": False})
-        selected_dates = price_history.loc[price_history["Ticker"].eq(chart_ticker), "Date"]
-        if not selected_dates.empty:
-            st.caption(f"Sumber: Ringkasan Saham IDX · disesuaikan terhadap stock split · data sampai {date_label(selected_dates.max())}. "
-                       "Grafik dapat diperbesar dengan menyeret kursor. Klik dua kali pada grafik untuk kembali ke tampilan awal.")
+        render_chart(figure)
+        st.caption("Notes: Harga telah disesuaikan terhadap stock split. Grafik dapat diperbesar dengan menyeret kursor. Klik dua kali pada grafik untuk kembali ke tampilan awal.")
 
 
-# ---------------------------------------------------------------------------
 # Halaman Prediksi Saham
-# ---------------------------------------------------------------------------
 def input_signature(ticker, source_version, mode, values):
-    """Kunci unik dari isian indikator, buat tahu prediksi perlu dihitung ulang atau tidak."""
+    """Kunci unik dari isian indikator, buat tahu prediksi perlu dihitung ulang atau tidak.
+
+    Args:
+        source_version: Versi sumber model dari source_context, supaya kunci
+            berubah setelah model diganti.
+        mode: Metode prediksi, data terakhir atau isian sendiri.
+        values: Nilai 10 indikator.
+
+    Returns:
+        Hash SHA-256 dalam bentuk teks hex.
+    """
     payload = [ticker, source_version, mode, [float(values[k]) for k in FEATURES]]
     return hashlib.sha256(json.dumps(payload).encode()).hexdigest()
 
 
 def feature_errors(values):
-    """Mengecek isian indikator. Harus angka, RSI dan Stochastic 0 sampai 100, rata-rata dan ATR tidak negatif, batas atas tidak lebih kecil dari batas bawah."""
+    """Validasi input teknikal indikator"""
     errors = []
     if not all(np.isfinite(v) for v in values.values()):
         return ["Semua indikator harus berupa angka yang dapat dihitung."]
@@ -1578,7 +1389,7 @@ def feature_errors(values):
 SHAP_HELP = ("SHAP adalah cara melihat indikator mana yang paling membuat angka prediksi naik atau turun. "
              "Setiap indikator diberi nilai: tanda plus berarti ikut menaikkan, tanda minus berarti ikut menurunkan.")
 
-CALC_HELP = ("Mirip struk belanja. Model mulai dari nilai dasar, yaitu rata-rata return dari data lama. "
+CALC_HELP = ("Model mulai dari nilai dasar prediksi, yaitu rata-rata return dari data lama. "
              "Lalu setiap indikator menambah atau mengurangi nilai itu, sampai totalnya menjadi angka prediksi.")
 
 
@@ -1586,8 +1397,7 @@ def render_explanation(model, values, prediction):
     """Penjelasan prediksi, kontribusi tiap indikator pakai SHAP dari XGBoost."""
     with st.expander("Lihat Nilai SHAP (Opsional)"):
         try:
-            # model di cache bisa saja dari modul XGBoost lama setelah reload
-            # jadi model dibuat ulang dari JSON-nya biar cocok dengan modul yang aktif
+            # model dibuat ulang dari JSON supaya cocok dengan modul XGBoost yang aktif
             from xgboost.core import Booster, DMatrix
             explanation_model = Booster(model_file=model.get_booster().save_raw())
             matrix = DMatrix(pd.DataFrame([values], columns=FEATURES))
@@ -1595,13 +1405,12 @@ def render_explanation(model, values, prediction):
             if not np.isclose(terms.sum(), prediction, atol=1e-6):
                 raise ValueError("Contribution sum mismatch")
             frame = pd.DataFrame({"Indikator":[FEATURE_LABELS[f] for f in FEATURES],
-                                  "Kontribusi (poin persentase)":terms[:-1] * 100})
+                                  "Kontribusi (%)":terms[:-1] * 100})
             frame = frame.iloc[np.argsort(np.abs(terms[:-1]))]
             fig = go.Figure(go.Bar(x=frame.iloc[:,1], y=frame.iloc[:,0], orientation="h",
-                marker_color=["#176342" if x >= 0 else "#A4262C" for x in frame.iloc[:,1]],
-                hovertemplate="%{y}<br>%{x:+.4f} poin persentase<extra></extra>"))
-            fig.update_layout(height=390, margin=dict(l=0,r=15,t=15,b=10), xaxis_title="Kontribusi terhadap prediksi (poin persentase)")
-            # dua penjelasan ditaruh berdampingan dalam satu baris
+                marker_color=[CHART_GREEN if x >= 0 else CHART_RED for x in frame.iloc[:,1]],
+                hovertemplate="%{y}<br>%{x:+.4f} %<extra></extra>"))
+            fig.update_layout(height=390, margin=dict(l=0,r=15,t=15,b=10), xaxis_title="Kontribusi terhadap prediksi (%)")
             left, right = st.columns(2, gap="large")
             left.markdown(
                 f'<p class="solyn-field-label">SHAP<i class="solyn-hint" data-tip="{escape(SHAP_HELP)}">?</i></p>'
@@ -1612,7 +1421,7 @@ def render_explanation(model, values, prediction):
                 f'<p class="solyn-field-label">Perhitungan<i class="solyn-hint" data-tip="{escape(CALC_HELP)}">?</i></p>'
                 f'<p class="solyn-section-note">Nilai dasar {terms[-1]*100:+.3f}% ditambah kontribusi seluruh '
                 f'indikator menghasilkan prediksi {prediction*100:+.3f}%.</p>', unsafe_allow_html=True)
-            st.plotly_chart(style_chart(fig), use_container_width=True, config={"displayModeBar":False})
+            render_chart(fig)
             st.caption("Grafik dapat diperbesar dengan menyeret kursor. Klik dua kali pada grafik untuk kembali ke tampilan awal.")
             st.markdown(
                 '<p class="v3-disclaimer">SHAP menjelaskan cara model menghitung angkanya, bukan penyebab naik '
@@ -1639,124 +1448,126 @@ MODE_CUSTOM = "Skenario Sendiri"
 
 def render_analysis():
     """Halaman Prediksi Saham: mengisi atau mengubah indikator lalu dapat prediksi return besok."""
-    require_user("analysis")
-    page_heading("Prediksi saham", "Prediksi return saham",
+
+    # Menampilkan judul dan deskripsi halaman Prediksi Saham
+    page_heading("Prediksi return saham",
                  "Pilih saham, lalu tekan Buat prediksi untuk melihat perkiraan perubahan harga pada satu hari bursa berikutnya.")
 
-    models, samples, metadata, _, version = source_context()
-    ticker = ticker_choice(DESIGN_TICKERS)
+    models, samples, metadata, version = source_context()
+
+    # Menampilkan dropdown pilih saham
+    ticker = ticker_choice(PORTFOLIO_TICKERS)
+
+    # Menampilkan status tanggal dan sumber data yang dipakai
     show_data_status(metadata)
     if ticker not in models:
         st.info(f"{ticker} sudah masuk daftar saham aplikasi. Model prediksinya belum tersedia.")
         st.button("Buat prediksi", type="primary", disabled=True)
         return
+
+    # Menampilkan radio button pilih metode prediksi: Data Terbaru atau Skenario Sendiri
     mode = st.radio("Pilih Metode Prediksi", [MODE_LATEST, MODE_CUSTOM], horizontal=True, key="v3_prediction_mode",
-                    help=f"{MODE_LATEST} memakai nilai indikator dari data harga terakhir aplikasi. "
-                         f"{MODE_CUSTOM} membuat Anda bisa mengubah sendiri nilai indikator, lalu melihat pengaruhnya terhadap prediksi.")
-    sample = samples.get(ticker, {})
-    if not all(f in sample for f in FEATURES):
-        st.warning("Indikator saham ini belum lengkap. Pilih saham lain atau coba lagi setelah pembaruan.")
-        return
+                    help=f"{MODE_LATEST} menggunakan nilai indikator dari data harga terakhir aplikasi. "
+                         f"{MODE_CUSTOM} memungkinkan Anda memasukkan nilai indikator, lalu melihat prediksi return berdasarkan input Anda.")
+    sample = samples[ticker]
     values = {f:float(sample[f]) for f in FEATURES}
+
     if mode == MODE_CUSTOM:
-        # tiap saham punya model sendiri, jadi nama sahamnya ikut disebut
-        st.info(f"**Model {ticker} ({BANK_NAMES.get(ticker, ticker)})**  \n"
-                "Isi nilai indikator teknikal pada kolom di bawah ini untuk memprediksi return.")
+        # Menampilkan info dan 10 kolom input angka indikator untuk diisi manual
+        st.info("Isi nilai indikator teknikal pada kolom di bawah ini untuk memprediksi return berdasarkan input Anda.")
         prefix = "v3_feature_" + hashlib.sha256(f"{ticker}-{version}".encode()).hexdigest()[:12]
-        # sepuluh isian indikator, dibagi dua kolom, semuanya dimulai kosong
-        # tombol plus minus bawaan Streamlit disembunyikan lewat CSS .st-key-solyn_scenario_inputs
+        # isian dimulai kosong, tombol plus minus disembunyikan lewat CSS
         with st.container(key="solyn_scenario_inputs"):
             cols = st.columns(2)
             for i, f in enumerate(FEATURES):
                 with cols[i%2]:
-                    # placeholder diisi nilai terbaru saham itu sebagai contoh
                     values[f] = st.number_input(FEATURE_LABELS[f], value=None, format="%.4f", key=prefix+f,
                                                 help=FEATURE_HELP[f], placeholder=f"Contoh: {float(sample[f]):.4f}")
     else:
+        # Menampilkan 10 nilai indikator teknikal dari data terakhir beserta tooltip
         render_latest_indicators(values, metadata.get("market_data_date"))
+    
+    # Validasi input user di kolom indikator teknikal
     missing = [f for f in FEATURES if values[f] is None]
     errors = [] if missing else feature_errors(values)
     for error in errors:
         st.error(error)
     if missing:
-        st.caption(f"Masih ada {len(missing)} indikator yang belum diisi. Tombol Buat prediksi aktif setelah semuanya terisi.")
-    # tanpa isian lengkap belum ada kombinasi yang bisa dihitung, jadi hasil lama ikut dibersihkan
+        st.caption(f"Masih ada {len(missing)} indikator yang belum diisi. Tombol 'Buat prediksi' akan aktif setelah semuanya terisi.")
     signature = None if missing else input_signature(ticker, version, mode, values)
+
+    # Menampilkan tombol Buat prediksi, menjalankan model.predict() saat ditekan
     if st.button("Buat prediksi", type="primary",
                  disabled=bool(errors or missing)):
-        # akses dicek ulang pas tombol diklik
-        require_user("analysis")
         try:
             with st.spinner("Menghitung prediksi..."):
                 prediction = float(models[ticker].predict(pd.DataFrame([values], columns=FEATURES))[0])
                 st.session_state["v3_prediction"] = {"signature":signature,"value":prediction}
         except Exception:
             LOGGER.exception("Prediction failed")
-            st.error("Prediksi belum dapat dihitung. Kembalikan indikator ke data terbaru lalu coba kembali.")
+            st.error("Error saat melakukan prediksi. Silahkan coba lagi.")
     result = st.session_state.get("v3_prediction")
     if result and result["signature"] != signature:
-        # signature itu sidik jari isian: saham, sumber data, metode, sama 10 angka indikator.
-        # Sidik jari ikut disimpan waktu hasil dihitung. Kalau yang sekarang beda, isiannya sudah
-        # berubah sejak tombol ditekan, jadi hasil lamanya dibuang.
+        # Buang hasil lama kalau isian berubah sejak tombol ditekan
         st.session_state.pop("v3_prediction", None)
         result = None
-    # judul Hasil Prediksi baru muncul setelah ada hasilnya
     if not result:
         return
+
+    # Menampilkan subjudul Hasil Prediksi
     st.markdown('<div class="solyn-section-head"><h2>Hasil Prediksi</h2></div>', unsafe_allow_html=True)
     value = result["value"]
-    # arah perubahan ditandai lewat warna: hijau kalau plus, merah kalau minus
     tone = "solyn-up" if value > 0 else "solyn-down" if value < 0 else ""
     if mode == MODE_CUSTOM:
         sentence = f"Berdasarkan skenario Anda, harga {ticker} diperkirakan {value*100:+.3f}% pada {prediction_target(metadata)}."
     else:
         sentence = (f"Harga {ticker} diperkirakan {value*100:+.3f}% pada {prediction_target(metadata)}, "
                     f"dibanding harga penutupan {date_label(metadata.get('market_data_date'))}.")
+
+    # Menampilkan angka prediksi return dalam persen dan kalimat penjelasan
     st.markdown(
         f'<div class="v3-result"><strong class="{tone}">{value*100:+.3f}%</strong>'
         f'<p>{escape(sentence)}</p>'
         f'<small class="v3-disclaimer">Hasil merupakan estimasi berdasarkan prediksi model, bukan kepastian perubahan harga.</small></div>',
         unsafe_allow_html=True)
+
+    # Menampilkan expander grafik SHAP
     render_explanation(models[ticker], values, value)
+
+    # Button navigasi
     st.markdown('<p class="solyn-next-label">Langkah Selanjutnya</p>', unsafe_allow_html=True)
     a,b=st.columns(2)
-    a.button("Buka simulasi portofolio", on_click=set_view, args=("portfolio",), use_container_width=True)
+    a.button("Buka simulasi portofolio", type="primary", on_click=set_view, args=("portfolio",), use_container_width=True)
     b.button("Lihat hasil pengujian", on_click=set_view, args=("performance",), use_container_width=True)
 
 
-# ---------------------------------------------------------------------------
 # Halaman Simulasi Portofolio
-# ---------------------------------------------------------------------------
-def lowest_usable_cap(available):
-    """Batas per saham terkecil yang masih bisa dipakai dengan jumlah saham yang tersedia."""
-    return int(np.ceil(100 / max(available, 1) - 1e-10))
-
-
-# biru muda yang lembut, dipilih supaya tulisan gelap di dalam potongan tetap nyaman dibaca
 ALLOCATION_LIGHT = (234, 241, 250)
 ALLOCATION_DARK = (143, 179, 216)
 
 
 def allocation_color(share):
-    """Warna satu potongan donut, ditentukan dari besar bobotnya.
-
-    share adalah bobot dibagi bobot terbesar, jadi dua saham dengan bobot sama
-    selalu mendapat warna yang sama persis.
-    """
-    position = min(max(float(share), 0.0), 1.0)
+    """Warna satu potongan donut, ditentukan berdasarkan besar bobot."""
+    position = float(share)
     return "#%02X%02X%02X" % tuple(
         round(light + (dark - light) * position)
         for light, dark in zip(ALLOCATION_LIGHT, ALLOCATION_DARK))
 
 
-def allocation_problem(count, cap, available=None):
-    """Pesan kalau jumlah saham terlalu sedikit untuk batas bobot yang dipilih."""
+def allocation_problem(count, cap):
+    """Pesan kalau jumlah saham terlalu sedikit untuk batas bobot yang dipilih.
+
+    Jumlah minimal saham adalah 100 / cap dibulatkan ke atas, paling sedikit 2.
+
+    Args:
+        count: Jumlah saham yang dipilih.
+        cap: Batas bobot per saham dalam persen (20 = 20%), beda dengan
+            max_weight di optimize_max_sharpe yang memakai desimal.
+
+    Returns:
+        Pesan untuk pengguna, atau None jika jumlah saham sudah cukup.
+    """
     minimum = max(2, int(np.ceil(100 / cap - 1e-10)))
-    if available is not None and minimum > available:
-        # batas terlalu kecil: berapa pun saham yang dipilih tidak akan pernah cukup
-        return (f"Batas maksimal {cap:g}% untuk satu saham tidak dapat dipakai, karena aplikasi hanya menyediakan "
-                f"{available} saham. Naikkan batasnya menjadi minimal {lowest_usable_cap(available)}% "
-                "pada Pengaturan Lanjutan (Opsional).")
     if count < minimum:
         return (f"Anda memilih {count} saham. Dengan batas maksimal {cap:g}% untuk satu saham, pilih minimal {minimum} saham. "
                 f"Tambahkan {minimum-count} saham, atau naikkan batasnya pada Pengaturan Lanjutan (Opsional).")
@@ -1767,38 +1578,32 @@ PORTFOLIO_INPUTS = ["v3_assets", "v3_capital", "v3_rate", "v3_cap"]
 
 
 def portfolio_key(name):
-    """Bikin nama buat isian di halaman portofolio, ada nomornya di belakang.
-
-    Yang dinamai ada empat: pilihan saham, dana simulasi, Risk-free Rate, dan batas maksimal
-    alokasi satu saham. Streamlit nyimpen isian orang berdasarkan namanya. Selama namanya sama,
-    isian lama nempel terus, mau kodenya minta nilai awal juga percuma.
-
-    Angka 0 di .get() itu untuk inisialisasi nomor awal, dipakai kalau belum pernah ada tombol Kembalikan ditekan.
-    """
+    """Nama isian portofolio, diberi nomor putaran supaya bisa dikembalikan ke nilai awal."""
     return f"{name}_{st.session_state.get('v3_portfolio_round', 0)}"
 
 
 def reset_portfolio_inputs(announce=False):
-    """Mengembalikan isian simulasi portofolio ke nilai awal.
-
-    Dipakai tombol Kembalikan ke pengaturan awal. Mengisi ulang nilai lewat session_state tidak cukup. Kalau pengguna mengetik angka yang ditolak
-    (misalnya di bawah dana minimal), nilai di server tetap nilai lama, sehingga isian di browser tidak
-    ikut berubah. Karena itu nomor putaran dinaikkan supaya semua isian dibuat baru dengan nilai awalnya.
-    """
+    """Mengembalikan isian simulasi portofolio ke nilai awal."""
     st.session_state.pop("v3_allocation", None)
     for name in PORTFOLIO_INPUTS:
         st.session_state.pop(portfolio_key(name), None)
     st.session_state["v3_portfolio_round"] = st.session_state.get("v3_portfolio_round", 0) + 1
     if announce:
-        # announce=True dipakai tombol Kembalikan, dipakai untuk memunculkan notifikasi
         st.session_state["v3_portfolio_reset_note"] = True
 
 
 def simulation_csv(frame, data_date, capital, rate, cap):
-    """Isi file CSV hasil simulasi.
+    """Isi file CSV hasil simulasi: tabel alokasi di kiri, pengaturan simulasi di kanan.
 
-    Tabel alokasi ada di kolom A sampai D. Kolom E dikosongkan, lalu pengaturan simulasi
-    ditulis sekali saja di kolom F dan G.
+    Args:
+        frame: Tabel alokasi dengan kolom Saham, Bobot (%), Dana (Rp), dan Prediksi return (%).
+        data_date: Tanggal data yang dipakai.
+        capital: Dana simulasi dalam rupiah.
+        rate: Risk-free rate tahunan dalam persen.
+        cap: Batas bobot per saham dalam persen.
+
+    Returns:
+        Isi CSV.
     """
     table = [[row["Saham"], round(row["Bobot (%)"], 2), int(round(row["Dana (Rp)"])), round(row["Prediksi return (%)"], 4)]
              for _, row in frame.iterrows()]
@@ -1816,151 +1621,158 @@ def simulation_csv(frame, data_date, capital, rate, cap):
 
 def render_portfolio():
     """Halaman Simulasi Portofolio: bobot Max Sharpe dari prediksi model dan nominal modal."""
-    require_user("portfolio")
-    page_heading("Simulasi portofolio", "Simulasi alokasi portofolio",
+
+    # Menampilkan judul dan deskripsi halaman Simulasi Portofolio
+    page_heading("Simulasi alokasi portofolio",
                  "Pilih saham dan masukkan dana yang ingin disimulasikan. Seluruh dana dibagi habis ke saham yang dipilih, "
                  "dan aplikasi menghitung persentase serta nominal alokasinya berdasarkan estimasi return dan risiko.")
 
-    models, samples, metadata, label, version = source_context()
+    models, samples, metadata, version = source_context()
+
+    # Menampilkan status tanggal dan sumber data yang dipakai
     show_data_status(metadata)
-    portfolio = metadata.get("portfolio")
-    if not portfolio or not portfolio.get("covariance"):
-        st.warning("Data bersama antar saham belum cukup untuk simulasi. Analisis satu saham tetap dapat digunakan.")
-        st.button("Buka analisis saham", on_click=set_view, args=("analysis",))
-        return
-    available = [ticker for ticker in DESIGN_TICKERS if ticker in portfolio["tickers"] and ticker in models]
-    scope_version = version + "|" + ",".join(DESIGN_TICKERS)
+    portfolio = metadata["portfolio"]
+
+    available = [ticker for ticker in PORTFOLIO_TICKERS if ticker in models]
+    scope_version = version + "|" + ",".join(PORTFOLIO_TICKERS)
     if st.session_state.get("v3_portfolio_version") != scope_version:
         reset_portfolio_inputs()
         st.session_state["v3_portfolio_version"] = scope_version
-    selected = st.multiselect("Saham dalam portofolio", DESIGN_TICKERS, default=available, key=portfolio_key("v3_assets"),
-                              help="Saham yang ikut dibagi dananya. Aplikasi hanya menyediakan sebelas saham perbankan.")
-    # tempat kosong untuk keterangan jumlah minimal saham, diisi setelah nilai cap dibaca
+
+    # Kolom input multiselect untuk milih saham
+    selected = st.multiselect("Saham dalam portofolio", PORTFOLIO_TICKERS, default=available, key=portfolio_key("v3_assets"),
+                              help="Alokasi dana akan dibagi ke Saham yang dipilih pada kolom ini.")
     minimum_note = st.empty()
     pending = [ticker for ticker in selected if ticker not in available]
-    if pending:
-        st.info("Model dan data alokasi belum tersedia untuk " + ", ".join(pending) + ". Hapus saham tersebut untuk menjalankan simulasi saat ini.")
-    capital = st.number_input("Dana simulasi (rupiah, minimal 1.000.000)", min_value=1_000_000, value=100_000_000, step=1_000_000,
+
+    # Menampilkan input nominal dana simulasi investasi (rupiah)
+    capital = st.number_input("Dana simulasi (rupiah, minimal Rp1.000.000)", min_value=1_000_000, value=100_000_000, step=1_000_000,
                               key=portfolio_key("v3_capital"),
-                              help="Jumlah uang yang ingin Anda coba bagikan. Ini hanya simulasi, tidak ada uang sungguhan yang dipakai.")
+                              help="Jumlah uang sebagai simulasi yang akan di alokasikan ke saham yang telah anda pilih.")
     st.caption(f"Dana simulasi: **{rupiah(capital)}**")
-    default_rate = float(portfolio.get("risk_free_annual", .06)) * 100
+    default_rate = float(portfolio["risk_free_annual"]) * 100
+
+    # Menampilkan expander pengaturan lanjutan
     with st.expander("Pengaturan Lanjutan (Opsional)"):
         rate = st.number_input("Risk-free Rate (%)", min_value=0.0, max_value=25.0,
              value=default_rate, step=.25, key=portfolio_key("v3_rate"),
              help="Bunga yang bisa didapat tanpa risiko, misalnya dari deposito. Angka ini dipakai sebagai pembanding: "
-                  "keuntungan portofolio dihitung bagus kalau lebih tinggi daripada angka ini. Nilai awalnya mengikuti "
-                  "asumsi yang dipakai saat model dibuat, bukan suku bunga Bank Indonesia hari ini.")
-        cap = st.number_input("Batas maksimal alokasi satu saham (%)", min_value=1.0, max_value=100.0, value=20.0, step=1.0,
+                  "keuntungan portofolio dihitung bagus kalau lebih tinggi daripada angka ini.")
+        cap = st.number_input("Batas maksimal alokasi satu saham (%)", min_value=10.0, max_value=100.0, value=20.0, step=5.0,
                               key=portfolio_key("v3_cap"),
-                              help="Persentase dana terbesar yang boleh masuk ke satu saham, supaya dana tidak menumpuk di satu saham saja.")
-    problem = allocation_problem(len(selected), cap, len(DESIGN_TICKERS))
+                              help="Persentase maksimal satu saham dalam portofolio.")
+    problem = allocation_problem(len(selected), cap)
     minimum = max(2, int(np.ceil(100 / cap - 1e-10)))
-    if minimum > len(DESIGN_TICKERS):
-        minimum_note.caption(f"Batas {cap:g}% untuk satu saham terlalu kecil bagi {len(DESIGN_TICKERS)} saham yang tersedia. "
-                             f"Naikkan batasnya menjadi minimal {lowest_usable_cap(len(DESIGN_TICKERS))}%.")
-    else:
-        minimum_note.caption(f"Dengan batas maksimal {cap:g}% untuk satu saham, perlu minimal {minimum} saham. "
-                             "Batas ini dapat diubah pada Pengaturan Lanjutan (Opsional).")
+    minimum_note.caption(f"Dengan batas maksimal {cap:g}% untuk satu saham, perlu minimal {minimum} saham. "
+                         "Batas ini dapat diubah pada Pengaturan Lanjutan (Opsional).")
+
+    # Menampilkan warning jika jumlah saham yang dipilih kurang dari batas minimum
     if problem:
         st.warning(problem)
-    # tombol Kembalikan muncul cuma kalau ada pengaturan yang beda dari nilai awal
     settings_changed = (set(selected) != set(available) or capital != 100_000_000
                         or abs(rate - default_rate) > 1e-9 or abs(cap - 20.0) > 1e-9)
     a,b = st.columns([1, 1.25])
+
+    # Menampilkan tombol Hitung alokasi
     calculate = a.button("Hitung alokasi", type="primary", disabled=bool(problem or pending), use_container_width=True)
+
+    # Menampilkan tombol Kembalikan ke pengaturan awal jika pengaturan diubah
     if settings_changed:
         b.button("Kembalikan ke pengaturan awal", on_click=reset_portfolio_inputs, args=(True,), use_container_width=True)
     if st.session_state.pop("v3_portfolio_reset_note", False):
         st.toast("Pengaturan berhasil dikembalikan")
     signature = json.dumps([version, selected, capital, rate, cap])
+
+    # Menghitung pembagian dana portofolio saat tombol ditekan
     if calculate:
-        require_user("portfolio")
         try:
             with st.spinner("Menghitung pembagian dana..."):
                 expected = pd.Series(portfolio["predicted_returns"], dtype=float).reindex(selected)
                 covariance = pd.DataFrame(portfolio["covariance"], dtype=float).loc[selected,selected].to_numpy(copy=True)
-                # rate diisi persen per tahun, yang dihitung di bawah return harian. Beda satuan.
-                # 252 itu kira-kira jumlah hari bursa setahun, jadi bunga setahun dipecah jadi sehari.
-                rf = (1+rate/100)**(1/252)-1
+                # rate tahunan dalam persen diubah ke harian (252 hari bursa)
+                rf = rate / 100 / 252
                 weights = optimize_max_sharpe(expected.to_numpy(), covariance.copy(), rf, cap/100)
-                if abs(weights.sum()-1)>1e-6 or weights.max()>cap/100+1e-6:
-                    raise ValueError("Allocation constraints failed")
                 ret = float(weights @ expected.to_numpy())
-                vol = float(np.sqrt(max(0, weights @ covariance @ weights)))
+                vol = float(np.sqrt(weights @ covariance @ weights))
                 frame = pd.DataFrame({"Saham":selected,"Bobot (%)":weights*100,"Dana (Rp)":weights*capital,
                     "Prediksi return (%)":expected.to_numpy()*100}).sort_values("Bobot (%)", ascending=False)
                 frame.loc[frame["Bobot (%)"] < 1e-7, ["Bobot (%)","Dana (Rp)"]] = 0
-                st.session_state["v3_allocation"] = {"signature":signature,"frame":frame,"ret":ret,"vol":vol,"sharpe":(ret-rf)/vol if vol else 0}
+                st.session_state["v3_allocation"] = {"signature":signature,"frame":frame,"ret":ret,"vol":vol,"sharpe":(ret-rf)/vol}
         except Exception:
             LOGGER.exception("Portfolio calculation failed")
             st.error("Alokasi belum berhasil dihitung. Tekan Kembalikan ke pengaturan awal, atau gunakan lebih banyak saham.")
             st.session_state.pop("v3_allocation", None)
     result = st.session_state.get("v3_allocation")
     if result and result["signature"] != signature:
-        # sama kaya di halaman Prediksi Saham. Sidik jarinya di sini: daftar saham, dana, rate,
-        # sama batas per saham. Kalau beda, pengaturannya sudah berubah sejak Hitung alokasi
-        # ditekan, jadi hasil lamanya dibuang.
+        # hasil lama dibuang kalau pengaturan berubah sejak tombol ditekan
         st.session_state.pop("v3_allocation", None)
         result = None
     if not result:
         return
     frame = result["frame"]
+
+    # Menampilkan subjudul dan grafik batang prediksi return tiap saham
     st.subheader("Prediksi return tiap saham")
     data_source = "Unggahan Anda dan riwayat Ringkasan Saham IDX" if metadata.get("source") == "session_upload" else "Ringkasan Saham IDX"
     st.caption(f"Sumber data: {data_source}. Prediksi untuk hari bursa berikutnya: {prediction_target(metadata)}.")
-    # grafik batang horizontal, satu batang per saham, diurutkan dari return terkecil
     predictions = frame.set_index("Saham").loc[selected, "Prediksi return (%)"].sort_values()
     fig_pred = go.Figure(go.Bar(
         x=predictions.to_numpy(), y=list(predictions.index), orientation="h",
-        marker_color=["#176342" if value >= 0 else "#A4262C" for value in predictions],
+        marker_color=[CHART_GREEN if value >= 0 else CHART_RED for value in predictions],
         text=[f"{value:+.3f}%" for value in predictions], textposition="outside",
         hovertemplate="%{y}<br>%{x:+.3f}%<extra></extra>"))
-    # sumbu diberi ruang tambahan supaya angka di ujung batang tidak terpotong
     span = float(max(abs(predictions.min()), abs(predictions.max()), 1e-6))
     fig_pred.update_layout(height=430, margin=dict(l=0, r=20, t=10, b=10),
                            xaxis_title="Prediksi return hari bursa berikutnya (%)",
                            xaxis_range=[min(float(predictions.min()), 0) - span * .45,
                                         max(float(predictions.max()), 0) + span * .45])
-    st.plotly_chart(style_chart(fig_pred), use_container_width=True, config={"displayModeBar":False})
+    # Menampilkan grafik batang prediksi return
+    render_chart(fig_pred)
+    # Menampilkan subjudul dan tiga metrik hasil portofolio (Return, Volatilitas, Sharpe Ratio)
     st.subheader("Perkiraan hasil portofolio")
     a,b,c = st.columns(3)
-    a.metric("Return satu hari", f"{result['ret']*100:+.3f}%", help="Perkiraan perubahan nilai portofolio untuk satu hari perdagangan berikutnya.")
-    b.metric("Volatilitas harian", f"{result['vol']*100:.3f}%", help="Seberapa besar nilai portofolio biasanya naik turun dalam sehari. Makin besar, makin berisiko.")
-    c.metric("Sharpe harian", f"{result['sharpe']:.3f}", help="Keuntungan untuk setiap satuan risiko, setelah dikurangi bunga tanpa risiko. Makin tinggi makin baik.")
-    st.subheader("Bobot alokasi dan pembagian dana")
+    a.metric("Return", f"{result['ret']*100:+.3f}%", help="Perkiraan perubahan nilai portofolio untuk satu hari perdagangan berikutnya.")
+    b.metric("Volatilitas", f"{result['vol']*100:.3f}%", help="Seberapa besar nilai portofolio biasanya naik turun dalam sehari. Makin besar, makin berisiko.")
+    c.metric("Sharpe Ratio", f"{result['sharpe']:.3f}", help="Keuntungan untuk setiap satuan risiko, setelah dikurangi bunga tanpa risiko. Makin tinggi makin baik.")
+    # Menampilkan subjudul dan pembagian alokasi dana
+    st.subheader("Grafik alokasi portofolio")
     st.caption("Simulasi belum memperhitungkan biaya transaksi, pajak, slippage (selisih harga saat transaksi), dan pembulatan ke satuan lot pembelian saham.")
     pie_frame = frame[frame["Bobot (%)"] > 1e-7]
-    # satu warna biru, makin besar bobotnya makin tua, dihitung dari nilai bobotnya sendiri
     weights_pct = pie_frame["Bobot (%)"].to_numpy()
-    largest = float(weights_pct.max()) if len(weights_pct) else 1.0
-    steps = [allocation_color(value / largest if largest else 1.0) for value in weights_pct]
+    largest = float(weights_pct.max())
+    steps = [allocation_color(value / largest) for value in weights_pct]
     fig = go.Figure(go.Pie(
         labels=pie_frame["Saham"], values=pie_frame["Bobot (%)"], hole=.45,
-        marker=dict(colors=steps, line=dict(color="#F7F9FC", width=2)),
+        marker=dict(colors=steps, line=dict(color=CHART_CANVAS, width=2)),
         text=[rupiah(value) for value in pie_frame["Dana (Rp)"]],
         texttemplate="%{label}<br>%{value:.1f}%<br>%{text}", textposition="inside",
-        insidetextorientation="horizontal", textfont=dict(size=12, color="#162235"),
+        insidetextorientation="horizontal", textfont=dict(size=12, color=CHART_INK),
         hovertemplate="%{label}<br>Bobot %{value:.2f}%<br>%{text}<extra></extra>",
         sort=False, showlegend=False,
     ))
     fig.update_layout(height=520, margin=dict(l=8,r=8,t=10,b=10),
                       uniformtext=dict(minsize=11, mode="hide"),
                       annotations=[dict(text=f"Total dana<br><b>{rupiah(capital)}</b>", x=.5, y=.5,
-                                        showarrow=False, font=dict(size=15, color="#162235"))])
-    st.plotly_chart(style_chart(fig), use_container_width=True, config={"displayModeBar":False})
+                                        showarrow=False, font=dict(size=15, color=CHART_INK))])
+    # Menampilkan diagram donat (pie chart) pembagian dana dan bobot saham
+    render_chart(fig)
+    # Menampilkan tombol unduh hasil simulasi dalam format CSV
     st.download_button("Unduh hasil simulasi CSV (Opsional)", simulation_csv(frame, metadata.get("market_data_date"), capital, rate, cap),
                        "simulasi_portofolio.csv", "text/csv")
-    # tombol utama menuju halaman Hasil Pengujian
-    st.button("Lihat Hasil Pengujian", type="primary", on_click=set_view, args=("performance",))
+    # Menampilkan tombol navigasi untuk pindah ke halaman Unggah Data
+    st.button("Perbarui Model", type="primary", on_click=set_view, args=("upload",))
 
 
-# ---------------------------------------------------------------------------
 # Halaman Hasil Pengujian
-# ---------------------------------------------------------------------------
 @st.cache_data(show_spinner=False)
 def read_research_file(filename, revision):
-    """Membaca satu file hasil notebook, di-cache per versi file. Menerima .parquet dan .csv."""
+    """Membaca satu file hasil notebook, di-cache per versi file. Menerima .parquet dan .csv.
+
+    Args:
+        filename: Nama file hasil notebook.
+        revision: Waktu modifikasi file. Tidak dipakai di isi fungsi, hanya
+            menjadi kunci cache supaya file dibaca ulang setelah berubah.
+    """
     path = research_path(filename)
     if path.suffix == ".csv":
         return pd.read_csv(path)
@@ -1968,11 +1780,8 @@ def read_research_file(filename, revision):
 
 
 def research_file(filename):
-    """Membaca file hasil notebook. Kalau filenya belum ada, hasilnya tabel kosong."""
-    path = research_path(filename)
-    if not path.exists():
-        return pd.DataFrame()
-    return read_research_file(filename, path.stat().st_mtime_ns)
+    """Membaca file hasil notebook, di-cache per versi file (waktu modifikasi)."""
+    return read_research_file(filename, research_path(filename).stat().st_mtime_ns)
 
 
 def render_metric_cards(cards):
@@ -1994,11 +1803,7 @@ def comparison_verdicts(rows):
 
 
 def render_comparison_cards(rows):
-    """Perbandingan model dan pembanding dalam kartu, satu kartu per ukuran.
-
-    Tiap kartu isinya angka model di atas, angka pembanding di bawahnya, lalu satu kalimat
-    siapa yang lebih baik. Kalimat itu diambil dari comparison_verdicts.
-    """
+    """Perbandingan model dan pembanding dalam kartu, satu kartu per ukuran."""
     cards = ""
     for index, ((name, note, model_value, benchmark_value, number_format, _), model_better) in enumerate(zip(rows, comparison_verdicts(rows))):
         if model_better is None:
@@ -2021,43 +1826,31 @@ SECTION_MODEL = "Evaluasi Model"
 
 
 def render_performance():
-    """Halaman Hasil Pengujian: hasil penelitian 2025 dari notebook 03 dan 05, angkanya tetap."""
-    require_user("performance")
-    page_heading("Hasil penelitian · Data tahun 2025", "Hasil pengujian 2025",
-                 "Seberapa baik model prediksi dan portofolio Solyn bekerja ketika diuji pada data tahun 2025.")
+    """Halaman Hasil Pengujian (statis)"""
+    # Menampilkan judul dan deskripsi halaman Hasil Pengujian
+    page_heading("Hasil pengujian 2025",
+                 "Seberapa baik prediksi model dan portofolio Solyn bekerja ketika diuji pada tahun 2025.")
 
-    evaluation_scope = research_file("evaluation_metrics_2025.parquet")
-    portfolio_scope = research_file("portfolio_xgb_daily_weights_2025.parquet")
-    if (evaluation_scope.empty or set(evaluation_scope.get("Ticker", [])) != set(DESIGN_TICKERS)
-            or portfolio_scope.empty or not set(DESIGN_TICKERS).issubset(portfolio_scope.columns)):
-        st.info("Hasil pengujian 2025 untuk 11 saham belum tersedia. Halaman ini akan terisi setelah notebook penelitian dijalankan ulang.")
-        return
+    # Radiobutton Lihat Pengujian
     section = st.radio("Lihat pengujian", [SECTION_PORTFOLIO, SECTION_MODEL], horizontal=True)
     try:
         if section == SECTION_MODEL:
             frame = research_file("evaluation_metrics_2025.parquet")
-            if frame.empty:
-                st.info("Hasil pengujian saham belum tersedia. Coba kembali setelah pengelola melengkapi hasil penelitian.")
-                return
-            ticker = ticker_choice([x for x in frame["Ticker"].tolist() if x in BANK_NAMES], "v3_evaluation_ticker")
+            # Menampilkan dropdown pilih saham untuk evaluasi model
+            ticker = ticker_choice(frame["Ticker"].tolist(), "v3_evaluation_ticker")
             row = frame.set_index("Ticker").loc[ticker]
-            # pembanding RMSE diambil dari notebook: nilai RMSE kalau prediksinya selalu ditulis 0%
+            # RMSE kalau prediksi selalu 0%
             context = research_file("evaluation_rmse_context_2025.csv")
-            zero_rmse = None
-            if not context.empty and "RMSE Prediksi Nol" in context.columns:
-                match = context.loc[context["Ticker"] == ticker, "RMSE Prediksi Nol"]
-                if len(match) == 1:
-                    zero_rmse = float(match.iloc[0]) * 100
-            rmse_note = "Rata-rata selisih prediksi dan hasil aktual dalam poin persen, selisih besar dihitung lebih berat."
-            if zero_rmse is not None:
-                rmse_note += f" Kalau prediksinya selalu ditulis 0%, angkanya {zero_rmse:.3f}."
+            zero_rmse = float(context.loc[context["Ticker"] == ticker, "RMSE Prediksi Nol"].iloc[0]) * 100
+            rmse_note = ("Rata-rata selisih prediksi dan hasil aktual dalam poin persen, selisih besar dihitung lebih berat."
+                         f" Kalau prediksinya selalu ditulis 0%, angkanya {zero_rmse:.3f}.")
+            # Menampilkan empat kartu metrik evaluasi model (RMSE, MAE, R2 Score, Directional Accuracy)
             render_metric_cards([
                 ("RMSE", f"{row['RMSE']*100:.3f}", rmse_note),
                 ("MAE", f"{row['MAE']*100:.3f}", "Rata-rata besar meleset prediksi setiap hari dari hasil aktual, dalam poin persen."),
                 ("R²", f"{row['R2 Score']:.3f}", "Nilai 0 setara dengan selalu menebak angka rata-rata. Di atas 0 lebih baik daripada tebakan itu, di bawah 0 lebih buruk."),
                 ("Directional accuracy", f"{row['Directional Accuracy (%)']:.1f}%", "Persentase hari ketika arah naik atau turun ditebak dengan benar. Menebak arah secara acak menghasilkan sekitar 50%."),
             ])
-            # kesimpulan singkat, muncul untuk saham yang R² nya di bawah nol
             if float(row["R2 Score"]) < 0:
                 st.markdown('<p class="solyn-section-note">Pada data 2025, model belum memprediksi return harian '
                             f'{escape(ticker)} lebih baik daripada tebakan sederhana. Hasil model lebih terlihat pada '
@@ -2067,43 +1860,51 @@ def render_performance():
             st.caption(f"Periode realisasi: {date_label(selected['target_date'].min())} sampai {date_label(selected['target_date'].max())} · {len(selected)} observasi.")
             actual = selected["target_next_return"].to_numpy(dtype=float) * 100
             forecast = selected["y_pred"].to_numpy(dtype=float) * 100
+            # Membuat grafik sebaran return aktual vs garis prediksi model
             fig = go.Figure()
             fig.add_trace(go.Scatter(
                 x=selected["target_date"], y=actual, mode="markers", name="Return aktual",
-                marker=dict(color="#547086", size=6, opacity=0.55),
+                marker=dict(color=CHART_ACTUAL, size=6, opacity=0.75),
                 hovertemplate="%{x|%d %b %Y}<br>Aktual %{y:+.2f}%<extra></extra>",
             ))
             fig.add_trace(go.Scatter(
                 x=selected["target_date"], y=forecast, mode="lines", name="Prediksi model",
-                line=dict(color="#A7372E", width=2.5),
+                line=dict(color=CHART_FORECAST, width=2.5),
                 hovertemplate="%{x|%d %b %Y}<br>Prediksi %{y:+.2f}%<extra></extra>",
             ))
-            fig.add_hline(y=0, line_color="#8B9296", line_width=1)
+            fig.add_hline(y=0, line_color=CHART_REFERENCE, line_width=1)
             fig.update_layout(height=400, yaxis_title="Return satu hari berikutnya (%)",
                               hovermode="x unified", legend=dict(orientation="h", y=1.08))
-            st.plotly_chart(style_chart(fig), use_container_width=True, config={"displayModeBar": False})
+            # Menampilkan grafik perbandingan return aktual dan prediksi model
+            render_chart(fig)
             st.caption("Titik menunjukkan hasil aktual tiap hari. Garis menunjukkan prediksi model pada skala yang sama. Garis yang hampir datar berarti model belum menangkap perubahan harian dengan baik.")
-            forecast_variation = np.std(forecast, ddof=1)
-            actual_variation = np.std(actual, ddof=1)
-            if forecast_variation < actual_variation * 0.5:
-                st.info(f"Pada {ticker}, simpangan baku prediksi hanya {forecast_variation:.2f} poin persentase, sedangkan hasil aktual {actual_variation:.2f} poin persentase. Data uji tersedia {len(selected)} hari, tetapi model ini belum berhasil mengikuti variasi returnnya.")
+            # Grafik selisih return aktual dan prediksi tiap hari
+            delta = actual - forecast
+            delta_fig = go.Figure(go.Bar(
+                x=selected["target_date"], y=delta, name="Selisih",
+                marker_color=np.where(delta >= 0, CHART_ACTUAL, CHART_ACTUAL_BELOW),
+                hovertemplate="%{x|%d %b %Y}<br>Aktual dikurangi prediksi %{y:+.2f} %<extra></extra>",
+            ))
+            delta_fig.add_hline(y=0, line_color=CHART_REFERENCE, line_width=1)
+            delta_fig.update_layout(height=320, yaxis_title="Selisih (%)",
+                                    hovermode="x unified", showlegend=False)
+            render_chart(delta_fig)
+            st.caption("Batang menunjukkan selisih return aktual dan prediksi model setiap hari. Batang di atas nol berarti return aktual lebih tinggi dari prediksi, dan di bawah nol berarti lebih rendah. Makin pendek batangnya, makin dekat prediksi dengan hasil aktual.")
             return
         performance = research_file("portfolio_performance_summary.parquet")
         daily = research_file("portfolio_daily_returns_2025.parquet")
         quarterly = research_file("quarterly_returns_summary.parquet")
-        if performance.empty or daily.empty or quarterly.empty:
-            st.info("Hasil pengujian portofolio belum lengkap. Coba kembali setelah pengelola melengkapi hasil penelitian.")
-            return
-        daily["snapshot_date"] = pd.to_datetime(daily["snapshot_date"])
-        daily = daily.sort_values("snapshot_date")
+        daily["realized_date"] = pd.to_datetime(daily["realized_date"])
+        daily = daily.sort_values("realized_date")
         model_col, benchmark_col = performance.columns[:2]
-        # modal awal ikut dihitung biar angkanya sama dengan grafik drawdown
+        # modal awal ikut dihitung, sama dengan grafik drawdown
         drawdowns = {}
         for name, returns_col in [(model_col, "return_xgb"), (benchmark_col, "return_hist")]:
             wealth = (1 + daily[returns_col]).cumprod()
             drawdowns[name] = float((wealth / wealth.cummax().clip(lower=1) - 1).min()) * 100
 
         def pair(row_name):
+            """Nilai satu metrik untuk portofolio XGBoost dan pembanding."""
             return float(performance.loc[row_name, model_col]), float(performance.loc[row_name, benchmark_col])
 
         comparison_rows = [
@@ -2120,49 +1921,43 @@ def render_performance():
              "bukan total gajinya. Di atas 1 dianggap bagus, di bawah 0 berarti kalah dari menyimpan uang di deposito.",
              *pair("Sharpe Ratio"), "{:.3f}", True),
         ]
-        # judul ditulis sendiri pakai HTML karena tanda tanya bawaan Streamlit baru muncul
-        # saat kursor lewat di atas judulnya
+        # judul HTML supaya ikon tanda tanya selalu terlihat
         metric_help = (
             "Keempat ukuran ini dipakai untuk menilai apakah portofolio yang disusun dari prediksi model lebih baik "
             "daripada portofolio pembanding. Portofolio pembanding memakai Historical Mean, yaitu rata-rata return "
             "masa lalu tiap saham. Keduanya diuji pada saham dan periode "
-            f"yang sama, yaitu {date_label(daily['snapshot_date'].min())} sampai "
-            f"{date_label(daily['snapshot_date'].max())}.")
+            f"yang sama, yaitu {date_label(daily['realized_date'].min())} sampai "
+            f"{date_label(daily['realized_date'].max())}.")
+        # Menampilkan subjudul dan kartu metrik evaluasi portofolio
         st.markdown(f'<p class="solyn-sub-head">Metrik evaluasi portofolio'
                     f'<i class="solyn-hint" data-tip="{escape(metric_help)}">?</i></p>', unsafe_allow_html=True)
+        # Menampilkan kartu perbandingan portofolio model vs pembanding (Return, Volatilitas, Drawdown, Sharpe)
         render_comparison_cards(comparison_rows)
-        master = research_file("master_panel_2020_2025.parquet")
-        if not master.empty and "close_adj" in master.columns:
-            bnli = master.loc[master["Kode Saham"] == "BNLI", ["snapshot_date", "close_adj"]].copy()
-            bnli["snapshot_date"] = pd.to_datetime(bnli["snapshot_date"])
-            bnli_2025 = bnli[bnli["snapshot_date"].dt.year == 2025].sort_values("snapshot_date")
-            if len(bnli_2025) > 1:
-                bnli_change = (bnli_2025["close_adj"].iloc[-1] / bnli_2025["close_adj"].iloc[0] - 1) * 100
-                robustness = research_file("portfolio_robustness_2025.parquet")
-                without_bnli = robustness.loc[robustness["Skenario"] == "10 saham tanpa BNLI", "Return kumulatif (%)"] if not robustness.empty else pd.Series(dtype=float)
-                without_note = f" Tanpa BNLI, return portofolio menjadi {without_bnli.iloc[0]:+.2f}%." if len(without_bnli) == 1 else ""
-                st.info(f"**Pengaruh saham BNLI**  \nHarga BNLI naik {bnli_change:.1f}% sepanjang 2025, sehingga sangat memengaruhi hasil portofolio.{without_note}")
+        master = research_file("panel_calendar.parquet")
+        bnli = master.loc[master["Kode Saham"] == "BNLI", ["snapshot_date", "close_adj"]].copy()
+        bnli["snapshot_date"] = pd.to_datetime(bnli["snapshot_date"])
+        bnli_2025 = bnli[bnli["snapshot_date"].dt.year == 2025].sort_values("snapshot_date")
+        bnli_change = (bnli_2025["close_adj"].iloc[-1] / bnli_2025["close_adj"].iloc[0] - 1) * 100
+        st.info(f"**Pengaruh saham BNLI**  \nHarga BNLI naik {bnli_change:.1f}% sepanjang 2025, sehingga sangat memengaruhi hasil portofolio.")
         cumulative, drawdown, quarter_chart = build_oos_charts(daily, quarterly)
+        # Menampilkan subjudul dan grafik return kumulatif portofolio
         st.subheader("Perkembangan return kumulatif")
         st.caption("Return kumulatif adalah perubahan nilai yang terakumulasi sepanjang periode.")
-        style_chart(cumulative)
-        st.plotly_chart(cumulative, use_container_width=True, config={"displayModeBar":False})
+        render_chart(cumulative)
+        # Menampilkan subjudul dan grafik drawdown penurunan nilai portofolio
         st.subheader("Drawdown")
         st.caption("Penurunan nilai dari puncak portofolio sebelumnya.")
-        style_chart(drawdown)
-        st.plotly_chart(drawdown, use_container_width=True, config={"displayModeBar":False})
+        render_chart(drawdown)
+        # Menampilkan subjudul dan grafik batang return portofolio per kuartal
         st.subheader("Rincian per kuartal")
-        style_chart(quarter_chart)
-        st.plotly_chart(quarter_chart, use_container_width=True, config={"displayModeBar":False})
+        render_chart(quarter_chart)
         st.caption("Hasil historis tidak menjamin hasil pada masa mendatang. Pembagian dana ini merupakan simulasi penelitian.")
     except Exception:
         LOGGER.exception("Research results unavailable")
         st.error("Hasil pengujian belum dapat dibaca. Silakan kembali ke analisis atau coba lagi nanti.")
 
 
-# ---------------------------------------------------------------------------
 # Halaman Unggah Data
-# ---------------------------------------------------------------------------
 def upload_widget_key():
     """Kunci kotak upload. Angkanya dinaikkan saat model sementara dihapus supaya kotaknya benar-benar kosong."""
     return f"market_uploads_{st.session_state.get('v3_upload_round', 0)}"
@@ -2171,18 +1966,12 @@ def upload_widget_key():
 def sample_workbook():
     """Membuat contoh file Ringkasan Saham dari data bawaan, formatnya sama dengan file IDX."""
     history = load_local_market_history()
-    if history.empty:
-        return None, None
     date = history.groupby("Ticker")["Date"].max().min()
     frame = history[history["Date"] == date].copy()
     rename = {"Ticker":"Kode Saham", "Open":"Open Price", "High":"Tertinggi",
               "Low":"Terendah", "Close":"Penutupan"}
     frame = frame.rename(columns=rename)
     frame["Tanggal Perdagangan Terakhir"] = pd.Timestamp(date).strftime("%Y-%m-%d")
-    if "Remarks" not in frame:
-        frame["Remarks"] = "--"
-    if not set(IDX_REQUIRED_COLUMNS).issubset(frame.columns):
-        return None, None
     buffer=BytesIO()
     frame[IDX_REQUIRED_COLUMNS].to_excel(buffer, index=False)
     return buffer.getvalue(), f"Ringkasan Saham-{pd.Timestamp(date):%Y%m%d}.xlsx"
@@ -2193,7 +1982,6 @@ UPLOAD_OVERLAP_DAYS = 7
 IDX_SUMMARY_URL = "https://www.idx.co.id/id/data-pasar/ringkasan-perdagangan/ringkasan-saham/"
 UPLOAD_MAX_GAP_DAYS = 10
 TRAINING_ERROR_MESSAGES = {
-    "Riwayat gabungan belum cukup": "Data belum cukup untuk melatih model saham yang dipilih. Pastikan file melanjutkan data utama tanpa jeda.",
     "Data perdagangan kosong": "Tidak ada hari perdagangan yang dapat dipakai setelah data diperiksa. Periksa kolom harga dan Volume pada file.",
     "duplikat": "Terdapat saham dan tanggal yang sama lebih dari satu kali. Gunakan satu file untuk setiap tanggal.",
     "Harga atau volume kosong": "Terdapat harga atau Volume yang kosong. Gunakan file asli dari IDX tanpa diedit.",
@@ -2216,6 +2004,7 @@ def read_uploads_with_progress(uploaded, **limits):
     bar = st.progress(0.0, text=f"Membaca file 0/{len(uploaded)}")
 
     def report(done, total, name):
+        """Memperbarui progress bar saat file dibaca."""
         bar.progress(done / total if total else 1.0,
                      text=f"Membaca file {min(done + 1, total)}/{total}: {name}" if name else "Pemeriksaan file selesai")
 
@@ -2233,7 +2022,14 @@ def date_range_label(dates):
 def upload_date_errors(dates, last_date):
     """Tanggal upload harus nyambung dengan data utama dan tidak boleh ada jeda panjang.
 
-    Tanggal diambil dari nama file, jadi bisa dicek sebelum isi Excel dibaca.
+    Args:
+        dates: Tanggal dari nama file yang diunggah.
+        last_date: Tanggal terakhir data utama aplikasi.
+
+    Returns:
+        Daftar pesan error. File yang lebih lama dari UPLOAD_OVERLAP_DAYS sebelum
+        last_date ditolak, dan pemeriksaan berhenti di jeda pertama yang lebih
+        dari UPLOAD_MAX_GAP_DAYS hari kalender.
     """
     errors = []
     dates = sorted(pd.Timestamp(date) for date in set(dates))
@@ -2266,7 +2062,6 @@ def upload_date_errors(dates, last_date):
 
 GUIDE_DIR = BASE_DIR / "assets" / "panduan"
 
-# panduan bergambar untuk mengunduh data dari IDX, ditampilkan satu per satu
 GUIDE_STEPS = [
     ("01_buka_idx.png", "Arahkan kursor ke Data Pasar, lalu pilih Ringkasan Saham."),
     ("02_pilih_tanggal.png", "Tekan kotak tanggal, lalu pilih tanggal hari bursa yang ingin diunduh."),
@@ -2280,19 +2075,13 @@ GUIDE_STEPS = [
 
 def move_guide_step(step):
     """Memindahkan gambar panduan satu langkah maju atau mundur."""
-    available = sum(1 for name, _ in GUIDE_STEPS if (GUIDE_DIR / name).exists())
     position = st.session_state.get("v3_guide_step", 0) + step
-    st.session_state["v3_guide_step"] = min(max(position, 0), max(available - 1, 0))
+    st.session_state["v3_guide_step"] = min(max(position, 0), len(GUIDE_STEPS) - 1)
 
 
 def render_upload_guide():
-    """Panduan bergambar dari GUIDE_STEPS, tampil satu gambar per halaman.
-
-    Langkah yang filenya belum ada di assets/panduan dilewati.
-    """
-    steps = [(GUIDE_DIR / name, caption) for name, caption in GUIDE_STEPS if (GUIDE_DIR / name).exists()]
-    if not steps:
-        return
+    """Panduan bergambar dari GUIDE_STEPS, tampil satu gambar per halaman."""
+    steps = [(GUIDE_DIR / name, caption) for name, caption in GUIDE_STEPS]
     total = len(steps)
     index = min(max(st.session_state.get("v3_guide_step", 0), 0), total - 1)
     picture, caption = steps[index]
@@ -2307,43 +2096,35 @@ def render_upload_guide():
 
 
 def render_upload():
-    """Halaman Unggah Data, pengguna upload file Ringkasan Saham IDX terbaru.
-
-    Alurnya: membaca dan mengecek file, mengecek tanggalnya nyambung dengan data utama, menggabungkan dengan
-    data bawaan, menyesuaikan split, menghitung indikator, lalu melatih model sementara.
-    Model sementara cuma berlaku di sesi pengguna itu dan tidak mengubah model bawaan.
-    """
-    require_user("upload")
-    page_heading("Data & model · Fitur lanjutan", "Unggah data saham",
+    """Halaman Unggah Data, pengguna upload file Ringkasan Saham IDX terbaru."""
+    # Menampilkan judul dan deskripsi halaman Unggah Data
+    page_heading("Unggah data saham",
                  "Unggah file Ringkasan Saham untuk melatih model sementara. Untuk analisis rutin, data aplikasi sudah tersedia.")
 
     history = load_local_market_history()
-    last_date = pd.Timestamp(history["Date"].max()) if not history.empty else None
+    last_date = pd.Timestamp(history["Date"].max())
     active = current_session_model()
-    last_text = date_label(last_date) if last_date is not None else "belum tersedia"
+    last_text = date_label(last_date)
+    # Menampilkan panduan bergambar langkah mengunduh file dari situs IDX
     st.subheader("Panduan Mengunduh Data")
-    # tautan ke situs IDX, ditaruh di barisnya sendiri di bawah judul
     st.markdown(f"[Situs Bursa Efek Indonesia]({IDX_SUMMARY_URL})")
     render_upload_guide()
+    # Menampilkan subjudul dan kotak unggah file Ringkasan Saham
     st.subheader("Unggah file Ringkasan Saham")
-    # tanggal diambil dari data aplikasi, jadi ikut berubah sendiri setelah pengelola memperbarui data
-    next_text = date_label(last_date + pd.offsets.BDay(1)) if last_date is not None else "hari bursa berikutnya"
+    next_text = date_label(last_date + pd.offsets.BDay(1))
     st.caption(f"Data aplikasi tersedia sampai {last_text}. Unggah file untuk tanggal {next_text} dan setelahnya.")
+    # Menampilkan widget file uploader untuk memilih file Excel (.xlsx)
     uploaded = st.file_uploader("Pilih satu atau beberapa file Ringkasan Saham", type=["xlsx"], accept_multiple_files=True, key=upload_widget_key())
     if not uploaded:
-        # model sementara yang sudah jadi tetap ditampilkan walaupun belum ada file dipilih
+        # Menampilkan kartu status model sementara jika sudah pernah dilatih sebelumnya
         render_session_model_card(active)
-        # template cuma tampil di bagian paling bawah selama belum ada file yang dipilih
         example, name = sample_workbook()
-        if example:
-            st.subheader("Punya data dari sumber lain?")
-            st.markdown("Template berikut memperlihatkan susunan kolom yang harus diikuti agar data Anda dapat dibaca "
-                        "aplikasi. Kalau file Anda diunduh dari situs IDX, template ini tidak diperlukan.")
-            st.download_button("Unduh Template", example, name,
-                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        return
-    if history.empty:
-        st.error("Data utama aplikasi belum tersedia, sehingga model sementara belum dapat dibuat. Hubungi pengelola aplikasi.")
+        st.subheader("Punya data dari sumber lain?")
+        st.markdown("Template berikut memperlihatkan susunan kolom yang harus diikuti agar data Anda dapat dibaca "
+                    "aplikasi. Kalau file Anda diunduh dari situs IDX, template ini tidak diperlukan.")
+        # Menampilkan tombol unduh file template Excel contoh format IDX
+        st.download_button("Unduh Template", example, name,
+                           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         return
     data, errors = read_uploads_with_progress(uploaded, check_dates=lambda dates: upload_date_errors(dates, last_date))
     if errors:
@@ -2355,6 +2136,7 @@ def render_upload():
             f"Semua file bertanggal sampai {date_label(last_date)} atau sebelumnya. Data ini menggantikan data utama pada tanggal yang sama, "
             "tetapi tidak menambah hari perdagangan baru."
         )
+    # Menampilkan subjudul dan tabel ringkasan file data yang diunggah
     st.subheader("Periksa data sebelum melanjutkan")
     st.write(f"**{data['Source File'].nunique()} file** · **{data['Ticker'].nunique()} saham** · {date_label(data['Date'].min())} – {date_label(data['Date'].max())}")
     file_summary = (data.groupby(["Source File", "Date"])["Ticker"]
@@ -2362,11 +2144,12 @@ def render_upload():
                     .rename(columns={"Source File": "File", "Date": "Tanggal", "Ticker": "Saham terbaca"}))
     file_summary["Tanggal"] = file_summary["Tanggal"].map(date_label)
     st.dataframe(file_summary, hide_index=True, use_container_width=True)
-    upload_tickers = [ticker for ticker in DESIGN_TICKERS if ticker in set(data["Ticker"])]
+    upload_tickers = [ticker for ticker in PORTFOLIO_TICKERS if ticker in set(data["Ticker"])]
+    # Menampilkan input multiselect pilihan saham yang akan diproses
     selected = st.multiselect("Saham yang diproses", upload_tickers, default=upload_tickers, key="v3_upload_selected")
+    # Menampilkan expander tabel sampel data harga penutupan dan volume
     with st.expander("Sampel data"):
-        # tabel HTML dengan gaya yang sama seperti tabel di Home, cukup baris dari tanggal pertama
-        sample = data.sort_values(["Date", "Ticker"]).head(len(DESIGN_TICKERS))
+        sample = data.sort_values(["Date", "Ticker"]).head(len(PORTFOLIO_TICKERS))
         number = lambda value: f"{value:,.0f}".replace(",", ".")
         rows = "".join(f'<tr><td>{escape(date_label(row.Date))}</td><td><strong>{escape(str(row.Ticker))}</strong></td>'
                        f'<td class="num">{number(row.Close)}</td><td class="num">{number(row.Volume)}</td></tr>'
@@ -2374,8 +2157,8 @@ def render_upload():
         st.markdown('<div class="solyn-table-wrap"><table class="solyn-table"><thead><tr><th>Tanggal</th><th>Saham</th>'
                     '<th class="num">Harga penutupan (Rp)</th><th class="num">Volume</th></tr></thead>'
                     f'<tbody>{rows}</tbody></table></div>', unsafe_allow_html=True)
+    # Menampilkan tombol untuk melatih model sementara dari data yang diunggah
     if st.button("Latih model sementara", type="primary", disabled=not selected):
-        require_user("upload")
         slot = training_slot()
         if not slot.acquire(blocking=False):
             st.toast("Pelatihan lain sedang berjalan, coba lagi setelah selesai")
@@ -2385,25 +2168,17 @@ def render_upload():
                 progress = st.progress(0, text="Menyiapkan riwayat saham")
                 combined = pd.concat([history[history["Ticker"].isin(selected)], data[data["Ticker"].isin(selected)]], ignore_index=True)
                 combined = combined.sort_values(["Ticker","Date"]).drop_duplicates(["Ticker","Date"],keep="last").reset_index(drop=True)
-                prepared, audit = prepare_market_data(combined)
+                prepared = prepare_market_data(combined)
                 status.update(label="Menghitung indikator dan melatih model...")
                 features = calculate_features(prepared)
                 def report(done, total, ticker):
+                    """Memperbarui progress bar training per saham."""
                     progress.progress(done/total, text=f"Memproses {ticker} · {done}/{total} saham selesai")
-                training_started_at = datetime.now(timezone.utc).isoformat()
-                result = train_baseline_models(features, selected, .20, on_progress=report)
-                result["training_started_at"] = training_started_at
-                result["training_completed_at"] = datetime.now(timezone.utc).isoformat()
+                result = train_baseline_models(features, selected, on_progress=report)
                 result.update({"version":datetime.now(timezone.utc).isoformat(),
-                    "schema_version":SESSION_MODEL_VERSION,
                     "source":"session_upload", "market_data_date":prepared['Date'].max().strftime('%Y-%m-%d'),
-                    "training_data_start":prepared['Date'].min().strftime('%Y-%m-%d'),
-                    "training_data_end":prepared['Date'].max().strftime('%Y-%m-%d'),
-                    "corporate_action_audit":audit.to_dict(orient="records"), "session_history":prepared})
-                try:
-                    result["portfolio"] = build_portfolio_allocation(prepared,result)
-                except ValueError as error:
-                    result["portfolio_error"] = str(error)
+                    "session_history":prepared})
+                result["portfolio"] = build_portfolio_allocation(prepared, result)
                 st.session_state["session_model_result"] = result
                 st.session_state["v3_source"] = "session"
                 st.session_state.pop("v3_source_widget", None)
@@ -2428,30 +2203,24 @@ def render_upload():
             )
         finally:
             slot.release()
+    # Menampilkan kartu status hasil pelatihan model sementara
     render_session_model_card(active)
 
 
 def render_session_model_card(active):
-    """Kartu hasil pelatihan model sementara, tampil tepat di bawah tombol Latih.
-
-    Isinya keterangan berhasil dan dua tombol: ke halaman Prediksi Saham dan ke Simulasi Portofolio.
-    Tombol simulasi dimatikan kalau portofolio tidak bisa dihitung dari data itu.
-    """
+    """Kartu hasil pelatihan model sementara, tampil tepat di bawah tombol Latih."""
     if not active:
         return
     with st.container(border=True, key="solyn_session_card"):
+        # Menampilkan pesan sukses bahwa model berhasil dilatih ulang
         st.success("Model berhasil dilatih ulang menggunakan data unggahan Anda. Tekan tombol di bawah "
                    "untuk melihat prediksi atau membuat simulasi alokasi portofolio dari data Anda.")
-        if active.get("skipped"):
-            st.warning("Sebagian saham tidak diproses: " + ", ".join(active["skipped"]))
-        if active.get("portfolio_error"):
-            st.info("Prediksi satu saham tersedia, tetapi riwayat bersama belum cukup untuk simulasi portofolio.")
+        # Menampilkan dua tombol navigasi untuk melihat prediksi atau membuka simulasi
         with st.container(horizontal=True, gap="small"):
             st.button("Lihat prediksi dari data ini", type="primary", on_click=set_view, args=("analysis",))
-            st.button("Buka simulasi dari data ini", on_click=set_view, args=("portfolio",),
-                      disabled=bool(active.get("portfolio_error")))
+            st.button("Buka simulasi dari data ini", on_click=set_view, args=("portfolio",))
     if st.session_state.pop("v3_scroll_to_session_card", False):
-        # script kecil untuk menggeser halaman ke kartu hasil setelah pelatihan selesai
+        # geser halaman ke kartu hasil
         import streamlit.components.v1 as components
         with st.container(key="solyn_scroll_card"):
             components.html("""<script>
@@ -2462,20 +2231,26 @@ setTimeout(() => {
 </script>""", height=0)
 
 
-# ---------------------------------------------------------------------------
 # Halaman Tentang
-# ---------------------------------------------------------------------------
+MANUAL_PATH = BASE_DIR / "assets" / "Buku_Manual_Solyn.pdf"
+
+
 def render_about():
     """Halaman Tentang: tujuan aplikasi, cara penggunaan, pembuat, dan dosen pembimbing."""
-    require_user("about")
-    page_heading("Tentang Solyn", "Tentang aplikasi",
+    # Menampilkan judul dan deskripsi halaman Tentang
+    page_heading("Tentang aplikasi",
                  "Tujuan aplikasi, cara penggunaan, serta pembuat dan pembimbing skripsi.")
+    # Menampilkan tombol unduh Buku Manual aplikasi dalam bentuk PDF jika ada
+    if MANUAL_PATH.exists():
+        st.download_button("Unduh Buku Manual (PDF)", MANUAL_PATH.read_bytes(), MANUAL_PATH.name, "application/pdf")
+    # Menampilkan subjudul dan deskripsi tujuan aplikasi Solyn
     st.subheader("Apa itu Solyn?")
     st.write("Aplikasi berbasis web untuk memprediksi return harian 11 saham perbankan "
              "di Bursa Efek Indonesia. Prediksi dibuat dengan model XGBoost dari sepuluh indikator teknikal, lalu "
              "dipakai untuk menyimulasikan pembagian dana portofolio dengan metode Mean-Variance Markowitz. "
              "Data berasal dari Ringkasan Saham IDX yang disesuaikan terhadap stock split. Hasil aplikasi adalah "
              "perkiraan model dan simulasi penelitian, bukan saran investasi.")
+    # Menampilkan subjudul dan ringkasan fungsi masing-masing halaman
     st.subheader("Penjelasan halaman")
     sections = {
         "Home": "Lihat harga terakhir dan tanggal data. Pilih Prediksi Saham atau Simulasi Portofolio untuk mulai.",
@@ -2487,9 +2262,11 @@ def render_about():
     for heading, body in sections.items():
         st.markdown(f"**{heading}**")
         st.write(body)
+    # Menampilkan catatan penting mengenai batasan hasil penelitian
     st.subheader("Perlu diingat")
     st.markdown("- Hasil pengujian tahun 2025 tidak menjamin hasil yang sama di masa depan.\n"
                 "- Simulasi portofolio belum menghitung biaya transaksi seperti fee broker dan pajak.")
+    # Menampilkan kartu profil mahasiswa pembuat aplikasi
     st.subheader("Pembuat")
     st.markdown(f'''<div class="solyn-about-card">
 <div><span>Nama</span><strong>{escape(AUTHOR["nama"])}</strong></div>
@@ -2497,14 +2274,13 @@ def render_about():
 <div><span>Fakultas</span><strong>{escape(AUTHOR["fakultas"])}</strong></div>
 <div><span>Universitas</span><strong>{escape(AUTHOR["universitas"])}</strong></div>
 </div>''', unsafe_allow_html=True)
+    # Menampilkan daftar nama dosen pembimbing skripsi
     st.subheader("Dosen pembimbing")
     st.markdown('<ol class="solyn-about-list">' + "".join(f"<li>{escape(name)}</li>" for name in SUPERVISORS)
                 + "</ol>", unsafe_allow_html=True)
 
 
-# ---------------------------------------------------------------------------
 # Halaman Admin
-# ---------------------------------------------------------------------------
 def format_approval_time(value):
     """Format waktu izin akses buat tabel admin."""
     if not str(value).strip():
@@ -2530,8 +2306,6 @@ def baseline_idx_history():
     """Data mentah Ringkasan Saham IDX yang jadi dasar model bawaan."""
     path = BASE_DIR / DEFAULT_BASELINE_PATH
     with ZipFile(path) as archive:
-        if "idx_history.csv" not in archive.namelist():
-            raise ValueError("Model bawaan belum memuat riwayat IDX. Bangun ulang dengan scripts/build_baseline.py.")
         return pd.read_csv(BytesIO(archive.read("idx_history.csv")), parse_dates=["snapshot_date"])
 
 
@@ -2553,7 +2327,6 @@ def baseline_github_settings():
 def write_local_bundle(bundle):
     """Menulis bundle baru ke server lewat file sementara biar file lama tidak rusak."""
     path = BASE_DIR / DEFAULT_BASELINE_PATH
-    path.parent.mkdir(parents=True, exist_ok=True)
     temporary_path = path.with_suffix(".manual.tmp")
     try:
         temporary_path.write_bytes(bundle)
@@ -2565,8 +2338,15 @@ def write_local_bundle(bundle):
 def publish_manual_baseline(uploaded_market_data, expected_email):
     """Melatih ulang 11 model dari data IDX dan menyimpan bundle baru.
 
-    Kalau [github] sudah diisi di Secrets, bundle di-commit ke GitHub. Bundle juga ditulis
-    ke server biar langsung terpakai sampai Streamlit Cloud reload aplikasinya.
+    Bundle selalu disimpan ke file lokal, dan di-commit ke GitHub jika
+    pengaturan GitHub tersedia.
+
+    Args:
+        uploaded_market_data: Hasil parse_market_uploads dari upload admin.
+        expected_email: Email admin yang memulai proses, dicek ulang sebelum training.
+
+    Returns:
+        Tuple (tanggal data terbaru, jumlah tanggal baru, URL commit GitHub atau teks kosong).
     """
     actor = require_admin_action(expected_email)
     combined_raw, new_dates = append_idx_rows(baseline_idx_history(), uploads_to_idx_rows(uploaded_market_data))
@@ -2586,30 +2366,18 @@ def publish_manual_baseline(uploaded_market_data, expected_email):
 def render_admin_monitoring():
     """Panel admin: status model bawaan, jumlah model, tanggal data, dan waktu training."""
     st.subheader("Status aplikasi")
-    path = BASE_DIR / DEFAULT_BASELINE_PATH
-    if not path.exists():
-        st.error("Model bawaan belum tersedia. Analisis dan simulasi belum dapat memakai data utama.")
-        return
-    try:
-        with ZipFile(path) as archive:
-            manifest = json.loads(archive.read("manifest.json"))
-            model_count = len([name for name in archive.namelist() if name.startswith("models/") and name.endswith(".json")])
-        ticker_count = len(set(manifest.get("tickers", [])))
-        ready = model_count == len(PORTFOLIO_TICKERS) and set(manifest.get("tickers", [])) == set(PORTFOLIO_TICKERS)
-        st.markdown(
-            '<div class="solyn-admin-facts">'
-            f'<span>Model siap <strong>{model_count}/{len(PORTFOLIO_TICKERS)}</strong></span>'
-            f'<span>Data perdagangan terakhir <strong>{escape(date_label(manifest.get("market_data_date")))}</strong></span>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-        st.write("**Pelatihan terakhir:** " + timestamp_label(manifest.get("training_completed_at")))
-        if not ready:
-            st.warning(f"Model bawaan belum lengkap. Berkas memuat {ticker_count} kode saham dan {model_count} model.")
-        st.caption("Sumber: " + str(manifest.get("source", "belum tercatat")))
-    except Exception:
-        LOGGER.exception("Admin baseline monitoring failed")
-        st.error("Berkas model bawaan belum dapat dibaca. Model sebelumnya perlu diperiksa.")
+    with ZipFile(BASE_DIR / DEFAULT_BASELINE_PATH) as archive:
+        manifest = json.loads(archive.read("manifest.json"))
+        model_count = len([name for name in archive.namelist() if name.startswith("models/") and name.endswith(".json")])
+    st.markdown(
+        '<div class="solyn-admin-facts">'
+        f'<span>Model siap <strong>{model_count}/{len(PORTFOLIO_TICKERS)}</strong></span>'
+        f'<span>Data perdagangan terakhir <strong>{escape(date_label(manifest.get("market_data_date")))}</strong></span>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+    st.write("**Pelatihan terakhir:** " + timestamp_label(manifest.get("training_completed_at")))
+    st.caption("Sumber: " + str(manifest.get("source", "belum tercatat")))
     st.caption("Data dan model diperbarui melalui unggahan file Ringkasan Saham IDX pada bagian di bawah.")
 
 
@@ -2634,6 +2402,7 @@ def _render_admin_access_body(identity):
         search = search_col.text_input("Cari pengguna", placeholder="Nama atau email", key="v3_admin_user_search").strip()
         status_filter = status_col.selectbox("Filter status", ["Semua", "Menunggu", "Disetujui", "Ditolak"], key="v3_admin_user_status")
         def visible_records(source):
+            """Menyaring akun sesuai filter dan pencarian, yang menunggu persetujuan di atas."""
             visible = source.copy()
             if status_filter != "Semua":
                 wanted = {"Menunggu": "pending", "Disetujui": "approved", "Ditolak": "rejected"}[status_filter]
@@ -2656,7 +2425,7 @@ def _render_admin_access_body(identity):
         else:
             selected = st.selectbox("Pilih akun untuk diubah", filtered["Email"].tolist())
             row = records[records["Email"] == selected].iloc[0]
-            # pemilik aplikasi dan akun sendiri tidak bisa dicabut aksesnya atau diturunkan role-nya
+            # akun pemilik dan akun sendiri tidak bisa dicabut
             protected = selected.lower() in owners or selected.lower() == identity["email"]
             is_admin_row = selected.lower() in owners or role_of(row) == "Admin"
             reject_confirm = st.checkbox("Saya ingin menolak atau mencabut akses akun yang dipilih",
@@ -2676,12 +2445,11 @@ def _render_admin_access_body(identity):
                 require_admin_action(identity["email"])
                 try:
                     if role_button:
-                        updated = change_user_role(selected, make_role)
+                        change_user_role(selected, make_role)
                         message = f"Role {selected} diubah menjadi {make_role}."
                     else:
-                        updated = review_approval_request(selected, "Approved" if approve else "Rejected")
+                        review_approval_request(selected, "Approved" if approve else "Rejected")
                         message = "Status akses diperbarui."
-                    # bagian ini dimuat ulang supaya tombol langsung mengikuti status dan role terbaru
                     st.session_state["v3_admin_toast"] = message
                     st.rerun(scope="fragment")
                 except ValueError as error:
@@ -2723,7 +2491,7 @@ def _render_admin_access_body(identity):
         display_records[TRIAL_COLUMN] = display_records[TRIAL_COLUMN].map(
             lambda value: format_approval_time(value) if str(value).strip() else "Belum")
         with table_slot.container():
-            # tinggi tabel mengikuti jumlah baris (sekitar 35 piksel per baris) supaya tidak ada baris kosong
+            # tinggi tabel mengikuti jumlah baris
             st.dataframe(display_records, hide_index=True, use_container_width=True,
                          height=min(250, 35 * (len(display_records) + 1) + 3))
     except Exception:
@@ -2743,11 +2511,7 @@ def render_admin_access(identity):
 
 
 def render_admin_baseline(identity):
-    """Panel admin buat update model bawaan pakai file Ringkasan Saham IDX terbaru.
-
-    Tanggal baru ditambahkan ke data IDX, 11 model dilatih ulang pakai hyperparameter
-    penelitian, lalu bundle disimpan ke GitHub biar Streamlit Cloud pakai versi baru.
-    """
+    """Panel admin buat update model bawaan pakai file Ringkasan Saham IDX terbaru."""
     st.subheader("Pembaruan data dan model")
     st.caption(
         "Unggah file Ringkasan Saham IDX untuk tanggal setelah data terakhir. Setiap file harus memuat 11 saham. "
@@ -2807,7 +2571,6 @@ def render_admin_baseline(identity):
             if commit_url:
                 message += " Tersimpan di GitHub. Aplikasi akan dimuat ulang otomatis dalam 1 sampai 2 menit."
             st.session_state["v3_admin_flash"] = message
-            # file yang sudah diproses dilepas dari memori server dengan mengosongkan isian unggah
             clear_uploads("v3_admin_upload_round")
             st.rerun()
         except (ValueError, GitHubStoreError) as error:
@@ -2823,7 +2586,7 @@ def render_admin_baseline(identity):
 
 def render_admin():
     """Halaman Admin, khusus email admin."""
-    identity = require_user("admin")
+    identity = current_identity()
     if not identity.get("is_admin"):
         st.error("Halaman ini hanya tersedia untuk administrator.")
         return
@@ -2838,15 +2601,12 @@ def render_admin():
     render_admin_access(identity)
 
 
-# ---------------------------------------------------------------------------
 # Timer coba gratis dan fungsi utama
-# ---------------------------------------------------------------------------
 @st.fragment(run_every=5)
 def render_trial_timer():
     """Menghitung mundur coba gratis tiap 5 detik, logout otomatis walaupun pengguna diam saja."""
     trial = trial_state()
     if not trial:
-        # waktu habis atau akun baru saja disetujui admin: muat ulang seluruh halaman
         enforce_trial_expiry()
         if st.session_state.get(TRIAL_NOTICE_KEY) or st.session_state.get(APPROVED_NOTICE_KEY):
             st.rerun(scope="app")
@@ -2872,11 +2632,7 @@ def set_page_language():
 
 
 def main():
-    """Fungsi utama, dijalankan ulang Streamlit setiap pengguna berinteraksi.
-
-    Urutannya: mengecek waktu coba gratis, menentukan halaman dari URL, menampilkan sidebar dan header,
-    menjalankan halaman yang dipilih, lalu memunculkan popup login kalau perlu.
-    """
+    """Fungsi utama, dijalankan ulang Streamlit setiap pengguna berinteraksi."""
     set_page_language()
     enforce_trial_expiry()
     identity = current_identity()
@@ -2888,29 +2644,24 @@ def main():
         return
     status = access_status(identity)
     if status in {"new", "pending"} and trial_available() and not trial_record_window(identity["email"]):
-        # akun yang belum disetujui langsung bisa memakai semua fitur selama waktu coba gratis
         if start_trial(identity, view) == "started":
             st.rerun()
     if status != "approved":
         render_access_page(identity)
         return
     with st.sidebar:
-        if LOGO_PATH.exists():
-            encoded_logo = base64.b64encode(LOGO_PATH.read_bytes()).decode("ascii")
-            st.markdown(f'<div class="v3-logo"><img src="data:image/png;base64,{encoded_logo}" alt="Solyn"></div>', unsafe_allow_html=True)
-        else:
-            st.title("Solyn")
+        encoded_logo = base64.b64encode(LOGO_PATH.read_bytes()).decode("ascii")
+        st.markdown(f'<div class="v3-logo"><img src="data:image/png;base64,{encoded_logo}" alt="Solyn"></div>', unsafe_allow_html=True)
         st.markdown('<div class="solyn-brand-note">Riset saham perbankan</div>',unsafe_allow_html=True)
         def nav_buttons(destinations):
+            """Tombol navigasi, halaman yang sedang dibuka diberi warna utama."""
             for destination in destinations:
                 st.button(VIEWS[destination], type="primary" if view == destination else "secondary",
                           key="v3_nav_" + destination, use_container_width=True,
                           on_click=set_view, args=(destination,))
 
-        # menu fitur aplikasi di atas
         with st.container(key="v3_nav"):
             nav_buttons(["home", "analysis", "portfolio", "upload"])
-        # bagian bawah: Hasil Pengujian, Tentang, dan Panel Admin (dipisah garis), data harga, lalu akun
         with st.container(key="v3_sidebar_footer"):
             with st.container(key="v3_info"):
                 bottom = ["performance", "about"]
@@ -2932,8 +2683,7 @@ def main():
                     if local_approval_bypass(identity):
                         st.caption("Masuk lokal")
     if st.session_state.get("v3_rendered_view") != view:
-        # Streamlit menyimpan posisi scroll waktu rerun
-        # jadi scroll ke atas cuma pas pindah halaman, biar halaman baru mulai dari judul
+        # scroll ke atas hanya saat pindah halaman
         import streamlit.components.v1 as components
         with st.container(key="solyn_page_focus"):
             components.html('''<script>
