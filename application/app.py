@@ -1979,8 +1979,7 @@ def sample_workbook():
     return buffer.getvalue(), f"Ringkasan Saham-{pd.Timestamp(date):%Y%m%d}.xlsx"
 
 
-# file upload boleh mundur 7 hari dari data utama, jeda antar tanggal paling lama 10 hari
-UPLOAD_OVERLAP_DAYS = 7
+# jeda antar tanggal upload paling lama 10 hari, untuk jaga-jaga hari libur atau suspensi bursa
 IDX_SUMMARY_URL = "https://www.idx.co.id/id/data-pasar/ringkasan-perdagangan/ringkasan-saham/"
 UPLOAD_MAX_GAP_DAYS = 10
 TRAINING_ERROR_MESSAGES = {
@@ -2022,24 +2021,23 @@ def date_range_label(dates):
 
 
 def upload_date_errors(dates, last_date):
-    """Tanggal upload harus nyambung dengan data utama dan tidak boleh ada jeda panjang.
+    """Tanggal upload harus setelah data utama dan tidak boleh ada jeda panjang.
 
     Args:
         dates: Tanggal dari nama file yang diunggah.
         last_date: Tanggal terakhir data utama aplikasi.
 
     Returns:
-        Daftar pesan error. File yang lebih lama dari UPLOAD_OVERLAP_DAYS sebelum
+        Daftar pesan error. File yang tanggalnya sama dengan atau sebelum
         last_date ditolak, dan pemeriksaan berhenti di jeda pertama yang lebih
         dari UPLOAD_MAX_GAP_DAYS hari kalender.
     """
     errors = []
     dates = sorted(pd.Timestamp(date) for date in set(dates))
-    earliest_allowed = last_date - pd.Timedelta(days=UPLOAD_OVERLAP_DAYS)
-    too_old = [date for date in dates if date < earliest_allowed]
-    if too_old:
+    not_newer = [date for date in dates if date <= last_date]
+    if not_newer:
         errors.append(
-            f"File bertanggal {date_range_label(too_old)} sudah termasuk data lama. "
+            f"File bertanggal {date_range_label(not_newer)} tidak lebih baru dari data aplikasi. "
             f"Data aplikasi tersedia sampai {date_label(last_date)}, jadi gunakan file setelah tanggal tersebut."
         )
     new_dates = [date for date in dates if date > last_date]
