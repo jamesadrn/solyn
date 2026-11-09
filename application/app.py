@@ -1876,8 +1876,9 @@ def render_performance():
             fig.update_layout(height=400, yaxis_title="Return satu hari berikutnya (%)",
                               hovermode="x unified", legend=dict(orientation="h", y=1.08))
             # Menampilkan grafik perbandingan return aktual dan prediksi model
-            render_chart(fig)
+            st.subheader("Aktual vs Prediksi Model")
             st.caption("Titik menunjukkan hasil aktual tiap hari. Garis menunjukkan prediksi model pada skala yang sama. Garis yang hampir datar berarti model belum menangkap perubahan harian dengan baik.")
+            render_chart(fig)
             # Grafik selisih return aktual dan prediksi tiap hari
             delta = actual - forecast
             delta_fig = go.Figure(go.Bar(
@@ -1888,8 +1889,9 @@ def render_performance():
             delta_fig.add_hline(y=0, line_color=CHART_REFERENCE, line_width=1)
             delta_fig.update_layout(height=320, yaxis_title="Selisih (%)",
                                     hovermode="x unified", showlegend=False)
-            render_chart(delta_fig)
+            st.subheader("Selisih Aktual dan Prediksi Model")
             st.caption("Batang menunjukkan selisih return aktual dan prediksi model setiap hari. Batang di atas nol berarti return aktual lebih tinggi dari prediksi, dan di bawah nol berarti lebih rendah. Makin pendek batangnya, makin dekat prediksi dengan hasil aktual.")
+            render_chart(delta_fig)
             return
         performance = research_file("portfolio_performance_summary.parquet")
         daily = research_file("portfolio_daily_returns_2025.parquet")
