@@ -1354,6 +1354,16 @@ def render_home():
 
 
 # Halaman Prediksi Saham
+def latest_close(history, ticker):
+    """Harga penutupan terakhir satu saham beserta tanggalnya, atau None kalau belum ada."""
+    subset = history[history["Ticker"] == ticker].sort_values("Date")
+    subset = subset.assign(Close=pd.to_numeric(subset["Close"], errors="coerce")).dropna(subset=["Close"])
+    if subset.empty:
+        return None
+    last = subset.iloc[-1]
+    return float(last["Close"]), last["Date"]
+
+
 def input_signature(ticker, source_version, mode, values):
     """Kunci unik dari isian indikator, buat tahu prediksi perlu dihitung ulang atau tidak.
 
@@ -1524,9 +1534,20 @@ def render_analysis():
         sentence = (f"Harga {ticker} diperkirakan {value*100:+.3f}% pada {prediction_target(metadata)}, "
                     f"dibanding harga penutupan {date_label(metadata.get('market_data_date'))}.")
 
-    # Menampilkan angka prediksi return dalam persen dan kalimat penjelasan
+    # Estimasi harga = harga penutupan terakhir x (1 + prediksi return)
+    history = metadata.get("session_history")
+    if history is None:
+        history = load_local_market_history()
+    last = latest_close(history, ticker)
+    price_line = ""
+    if last:
+        close, close_date = last
+        price_line = (f'<div class="v3-result-price">Estimasi dalam bentuk harga<b>{rupiah(close * (1 + value))}</b>')
+
+    # Menampilkan angka prediksi return dalam persen, estimasi harga, dan kalimat penjelasan
     st.markdown(
         f'<div class="v3-result"><strong class="{tone}">{value*100:+.3f}%</strong>'
+        f'{price_line}'
         f'<p>{escape(sentence)}</p>'
         f'<small class="v3-disclaimer">Hasil merupakan estimasi berdasarkan prediksi model, bukan kepastian perubahan harga.</small></div>',
         unsafe_allow_html=True)

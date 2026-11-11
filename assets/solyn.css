@@ -107,7 +107,10 @@ button:focus-visible,input:focus-visible {outline:3px solid #1D4ED8!important;ou
 .solyn-up {color:var(--solyn-green)} .solyn-down {color:var(--solyn-red)}
 .v3-result {border:1px solid #d7d0c0;border-radius:14px;padding:1.7rem 1.8rem;background:#FFFFFF;margin:.4rem 0 .5rem;box-shadow:0 4px 12px #3d331204}
 .v3-result small {display:block;font-size:.82rem;color:#475569;margin-top:.55rem;letter-spacing:.02em;line-height:1.6}
-.v3-result strong {font-family:Georgia,serif;font-size:2.4rem;font-weight:400;letter-spacing:-.03em;line-height:1.2}
+.v3-result strong {font-family:inherit;font-size:2.4rem;font-weight:650;letter-spacing:-.01em;line-height:1.2;font-variant-numeric:tabular-nums}
+.v3-result-price {font-size:1.02rem;color:#475569;margin-top:.4rem;line-height:1.6;font-variant-numeric:tabular-nums}
+.v3-result-price b {font-size:1.35rem;font-weight:650;color:#162235;margin-left:.3rem}
+.v3-result-price span {display:block;font-size:.92rem}
 .v3-result p {font-size:1.02rem!important;color:#162235;margin:.5rem 0 0;line-height:1.65}
 .v3-result .v3-disclaimer {margin-top:.55rem}
 [data-testid="stMetric"] {padding:1rem 1.2rem;border:1px solid var(--solyn-line);border-radius:12px;background:#FFFFFF}
